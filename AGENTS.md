@@ -167,3 +167,17 @@ Reusable workflows live in [`.agents/skills/`](./.agents/skills/) (canonical). C
 | `wechat-svg` | WeChat SVG whitelist, bubbling-group interaction, paste compatibility (`/wechat-svg`) |
 
 Invoke manually: `/skill-name` in Cursor or Claude Code; OpenCode uses the `skill` tool.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in this repo's GitHub Issues (`DaneSpiritGOD/md`), via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five canonical roles, label strings unchanged. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `GLOSSARY.md` + `docs/adr/`. See `docs/agents/domain.md`.
