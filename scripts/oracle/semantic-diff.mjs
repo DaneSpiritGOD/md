@@ -4,11 +4,9 @@
  * Compares the browser Oracle (WeChat copy-flow output, ticket 06) against
  * the CLI's WeChat-ready output (ticket 04/05) at the property level, not the
  * raw-HTML level: the Oracle carries class/id attributes and the CLI strips
- * them by design, so a raw diff is meaningless noise. This script extracts
- * key visual properties per element type from inline styles (both outputs are
- * post-juice, so everything relevant is inline) and compares them with
- * tolerance (numeric within a percentage, colors normalized to rgb with a
- * small per-channel delta).
+ * them by design, so a raw diff is meaningless noise. Shared property
+ * extraction and tolerance helpers live in scripts/oracle/lib/extract.mjs
+ * (reused by the golden-snapshot verifier, ticket 08).
  *
  * Usage:
  *   node scripts/oracle/semantic-diff.mjs [--oracle <html>] [--cli <html>] [--out <dir>]
@@ -22,31 +20,18 @@
 
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
-// jsdom is a devDependency of the md-web-cli package; load it from there to
-// avoid a duplicate install at the repo root.
-const require = createRequire(import.meta.url)
-// eslint-disable-next-line antfu/no-import-node-modules-by-path
-const { JSDOM } = require('../../packages/md-web-cli/node_modules/jsdom')
+import { colorsMatch, extractProperties, parseColor, valuesMatch } from './lib/extract.mjs'
+
+export { colorsMatch, extractProperties, parseColor, valuesMatch }
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(__dirname, '../..')
 const DEFAULT_ORACLE = resolve(REPO_ROOT, 'packages/md-web-cli/oracle/oracle.html')
 const DEFAULT_CLI = resolve(REPO_ROOT, 'packages/md-web-cli/dist/cli.js')
 const DEFAULT_OUT = resolve(REPO_ROOT, 'docs/evidence/md-web-cli-tier1')
-
-// ---------------------------------------------------------------------------
-// Tolerance helpers
-// ---------------------------------------------------------------------------
-
-/** Numeric tolerance for px/size comparisons: 1% relative or 0.5px absolute. */
-const NUMERIC_REL_TOLERANCE = 0.01
-const NUMERIC_ABS_TOLERANCE = 0.5
-/** Per-channel rgb delta tolerated after normalization (hex -> rgb, case, spacing). */
-const COLOR_CHANNEL_TOLERANCE = 0
 
 function parseArgs(argv) {
   const args = { oracle: DEFAULT_ORACLE, cli: DEFAULT_CLI, out: DEFAULT_OUT }
@@ -59,143 +44,6 @@ function parseArgs(argv) {
   return args
 }
 
-/** Parse a css color to { r, g, b, alpha } or null when unparseable. */
-export function parseColor(value) {
-  if (!value)
-    return null
-  const v = value.trim().toLowerCase()
-  let m = v.match(/^#([0-9a-f]{3})$/)
-  if (m) {
-    const [r, g, b] = m[1].split('').map(c => Number.parseInt(c + c, 16))
-    return { r, g, b, a: 1 }
-  }
-  m = v.match(/^#([0-9a-f]{6})$/)
-  if (m) {
-    return {
-      r: Number.parseInt(m[1].slice(0, 2), 16),
-      g: Number.parseInt(m[1].slice(2, 4), 16),
-      b: Number.parseInt(m[1].slice(4, 6), 16),
-      a: 1,
-    }
-  }
-  m = v.match(/^rgba?\(([^)]+)\)$/)
-  if (m) {
-    const parts = m[1].split(/[\s,/]+/).filter(Boolean)
-    const rgb = parts.slice(0, 3).map(p => Number.parseFloat(p))
-    const a = parts[3] !== undefined ? Number.parseFloat(parts[3]) : 1
-    if (rgb.every(n => !Number.isNaN(n)))
-      return { r: rgb[0], g: rgb[1], b: rgb[2], a }
-  }
-  return null
-}
-
-/** Compare two color-ish values with channel tolerance; non-colors fall back to string compare. */
-export function colorsMatch(a, b) {
-  if (a === b)
-    return true
-  const ca = parseColor(a)
-  const cb = parseColor(b)
-  if (!ca || !cb)
-    return false
-  const d = Math.max(Math.abs(ca.r - cb.r), Math.abs(ca.g - cb.g), Math.abs(ca.b - cb.b))
-  return d <= COLOR_CHANNEL_TOLERANCE && Math.abs(ca.a - cb.a) <= 0.01
-}
-
-/** Extract the first px-ish number from a value like `19.2px` or `0 1em`. */
-function firstNumber(value) {
-  if (!value)
-    return null
-  const m = value.match(/(-?\d+(?:\.\d+)?)(px|em|rem|%)/)
-  return m ? Number.parseFloat(m[1]) : null
-}
-
-/** Compare two (possibly css-length) values numerically where possible. */
-export function valuesMatch(a, b) {
-  if (a === b)
-    return true
-  const na = firstNumber(a)
-  const nb = firstNumber(b)
-  if (na === null || nb === null)
-    return false
-  const scale = Math.max(Math.abs(na), Math.abs(nb), 1)
-  return Math.abs(na - nb) <= Math.max(NUMERIC_ABS_TOLERANCE, scale * NUMERIC_REL_TOLERANCE)
-}
-
-// ---------------------------------------------------------------------------
-// Extraction
-// ---------------------------------------------------------------------------
-
-function makeGrabber(el) {
-  const raw = el.getAttribute('style') ?? ''
-  const grab = (prop) => {
-    const m = raw.match(new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`, 'i'))
-    return m ? m[1].trim() : null
-  }
-  return grab
-}
-
-/**
- * Extract key visual properties per element type from one HTML document.
- * Both sides are post-juice inline-style documents, so inline styles carry
- * everything the comparison needs; computed styles are not required.
- */
-export function extractProperties(html) {
-  const doc = new JSDOM(html).window.document
-  const root = doc.body
-  const pick = (selector, props) => {
-    const el = root.querySelector(selector)
-    if (!el)
-      return null
-    const grab = makeGrabber(el)
-    const out = {}
-    for (const p of props)
-      out[p] = grab(p)
-    return out
-  }
-  const heading = tag => pick(tag, ['color', 'background', 'font-size', 'text-align', 'border-left', 'border-bottom'])
-  return {
-    container: pick('section', ['color', 'font-size', 'line-height', 'font-family']),
-    h1: heading('h1'),
-    h2: heading('h2'),
-    h3: heading('h3'),
-    h4: heading('h4'),
-    h5: heading('h5'),
-    h6: heading('h6'),
-    blockquote: pick('blockquote', ['border-left', 'border-radius', 'padding', 'background', 'color', 'font-style']),
-    pre: pick('pre', ['color', 'background', 'border-radius', 'line-height', 'margin', 'padding']),
-    macSign: pick('pre span', ['display', 'padding']),
-    strong: pick('strong', ['color', 'font-weight', 'font-size']),
-    codespan: pick('p code', ['color', 'background', 'border-radius', 'font-size']),
-    link: pick('a', ['color', 'text-decoration']),
-    li: pick('li', ['display', 'margin', 'color']),
-    ul: pick('ul', ['list-style', 'padding-left', 'color']),
-    ol: pick('ol', ['padding-left', 'color']),
-    table: pick('table', ['color', 'border-collapse']),
-    th: pick('th', ['border', 'padding', 'color', 'background', 'text-align']),
-    td: pick('td', ['border', 'padding', 'color', 'text-align']),
-    figcaption: pick('figcaption', ['text-align', 'color', 'font-size']),
-    hr: pick('hr', ['border-style', 'border-width', 'border-color', 'height']),
-    em: pick('em', ['font-style', 'font-size']),
-    del: pick('del', ['color', 'text-decoration']),
-    counts: {
-      h1: root.querySelectorAll('h1').length,
-      h2: root.querySelectorAll('h2').length,
-      h3: root.querySelectorAll('h3').length,
-      pre: root.querySelectorAll('pre').length,
-      blockquote: root.querySelectorAll('blockquote').length,
-      table: root.querySelectorAll('table').length,
-      li: root.querySelectorAll('li').length,
-      strong: root.querySelectorAll('strong').length,
-    },
-    hasStyleTag: !!doc.querySelector('style'),
-    hasClassAttributes: /\sclass\s*=\s*["']/.test(html),
-    zeroFontSizeBrackets: root.querySelectorAll('p[style*="font-size: 0px"]').length,
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Comparison
-// ---------------------------------------------------------------------------
 /**
  * Classify a raw-HTML-level difference between the two documents.
  * Returns one of the known/accepted difference classes or 'unexplained'.

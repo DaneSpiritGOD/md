@@ -13,6 +13,24 @@ output equivalent to the site's WeChat copy flow for the shared fixture.
 | `screenshot-side-by-side.png`                  | Both outputs side by side in one viewport.                                                                                                                                     |
 | `manual-wechat-check.md`                       | Instructions for the one human step: pasting both outputs into the WeChat editor and recording the conclusion.                                                                 |
 
+## Tier 2 golden snapshot (ticket 08)
+
+The CLI render of `packages/md-web-cli/fixtures/full.md` confirmed here is
+committed as the **golden snapshot** at
+`packages/md-web-cli/golden/snapshot.html`. It is the semantic baseline for
+the Tier 2 gate used by the publish (ticket 09) and sync (ticket 10)
+workflows: `scripts/oracle/verify-snapshot.mjs` re-renders the fixture and
+asserts exit code 0, zero pending placeholders, WeChat-ready inline styles,
+and key properties matching the snapshot (same extraction/tolerance rules as
+`semantic-diff.mjs`, shared via `scripts/oracle/lib/extract.mjs`).
+
+- Regenerate after an intentional visual change: `pnpm oracle:refresh-snapshot`
+- Verify: `pnpm oracle:verify-snapshot` (or
+  `node scripts/oracle/verify-snapshot.mjs --fixture <md> --snapshot <html>`)
+- Self-test (reverse cases must fail): `node scripts/oracle/verify-snapshot.mjs --self-test`
+- The ticket 06 `oracle-report.json` records `goldenSnapshotPath` pointing at
+  the snapshot.
+
 ## Reproduce
 
 ```bash
@@ -21,6 +39,7 @@ pnpm build --filter @dane.dai/md-web-cli
 node scripts/oracle/semantic-diff.mjs     # defaults to committed artifacts
 node scripts/oracle/verify-defaults.mjs
 node scripts/oracle/screenshot-comparison.mjs
+pnpm oracle:verify-snapshot            # Tier 2 golden-snapshot gate (ticket 08)
 ```
 
 ## Conclusion (machine side)

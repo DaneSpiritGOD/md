@@ -359,6 +359,9 @@ async function main() {
       fixturePath: `packages/md-web-cli/fixtures/full.md`,
       fixtureBytes: Buffer.byteLength(fixture, `utf8`),
       oracleBytes: Buffer.byteLength(wrapped, `utf8`),
+      // Tier 2 gate (ticket 08): fresh CLI renders are verified against this
+      // committed golden snapshot, not against the browser Oracle directly.
+      goldenSnapshotPath: `packages/md-web-cli/golden/snapshot.html`,
       preview: previewSnapshot,
       summary,
       consoleErrors,

@@ -30,6 +30,8 @@
     "oracle:diff": "node scripts/oracle/semantic-diff.mjs",
     "oracle:verify-defaults": "node scripts/oracle/verify-defaults.mjs",
     "oracle:screenshots": "node scripts/oracle/screenshot-comparison.mjs",
+    "oracle:refresh-snapshot": "node scripts/oracle/refresh-snapshot.mjs",
+    "oracle:verify-snapshot": "node scripts/oracle/verify-snapshot.mjs",
     "lint": "eslint . --fix",
     "type-check": "pnpm type-check:web && pnpm type-check:packages",
     "type-check:web": "pnpm --filter @md/web run type-check",
