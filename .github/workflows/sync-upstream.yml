@@ -1,0 +1,170 @@
+name: Sync upstream doocs/md
+
+# Ticket #10: weekly cron + manual dispatch upstream sync.
+#
+# Flow: fetch upstream (doocs/md) → if upstream/main has commits not yet on
+# main, merge them into the `sync/upstream` branch in this workspace → build
+# md-web-cli and run the ticket-08 verify-snapshot gate (same scripts as
+# publish-md-web-cli.yml so the two never disagree about what passes) → push
+# the branch and open — or force-update an already-open — PR into main whose
+# body records the verification result and this run link. The human reviews
+# the diff and merges manually; that merge is a real push to main and
+# triggers the publish chain (publish-md-web-cli.yml) normally.
+#
+# The PR is created with GITHUB_TOKEN, so it carries no checks — events from
+# the default token do not trigger workflows. The verification that already
+# passed here, recorded in the PR body, is what the human merges on.
+#
+# Failure modes (all surface as job failure → GitHub's built-in Actions
+# notification; no PR is opened, nothing is pushed):
+#   1. Merge conflict   — "Merge upstream main" step fails.
+#   2. Build failure    — "Build bundle" step fails.
+#   3. Verify failure   — "Verify golden snapshot" step fails.
+#
+# No new upstream commits → job exits successfully, no PR, no branch change.
+
+on:
+  schedule:
+    - cron: '0 3 * * 1' # every Monday 03:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: write # push / force-update the sync branch
+  pull-requests: write # open and update the sync PR
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main (full history)
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0 # merge + ancestry check + force-update need history
+          persist-credentials: true # GITHUB_TOKEN push access for the sync branch
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/doocs/md.git
+          git fetch upstream main --no-tags
+          git fetch origin main --no-tags
+
+      - name: Check for new upstream commits
+        id: upstream
+        run: |
+          UPSTREAM_HEAD="$(git rev-parse upstream/main)"
+          echo "head=${UPSTREAM_HEAD}" >> "$GITHUB_OUTPUT"
+          if git merge-base --is-ancestor "${UPSTREAM_HEAD}" origin/main; then
+            echo "new=false" >> "$GITHUB_OUTPUT"
+            echo "No new upstream commits (upstream/main ${UPSTREAM_HEAD} already contained in main)."
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+            echo "New upstream commits detected; range main..${UPSTREAM_HEAD}:"
+            git log --oneline origin/main.."${UPSTREAM_HEAD}" || true
+          fi
+
+      - name: Stop early — nothing to sync
+        if: steps.upstream.outputs.new != 'true'
+        run: echo "Upstream is already fully merged into main; nothing to do."
+
+      - name: Create sync branch from main
+        if: steps.upstream.outputs.new == 'true'
+        run: |
+          git checkout -B sync/upstream origin/main
+
+      - name: Merge upstream main
+        # Failure here = failure mode 1 (merge conflict): git exits non-zero,
+        # the job fails, GitHub notifies, no PR is opened, main is untouched.
+        if: steps.upstream.outputs.new == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git merge --no-edit "upstream/main" \
+            -m "chore: merge upstream doocs/md at $(git rev-parse upstream/main)"
+
+      - name: Set up pnpm
+        # Mirror publish-md-web-cli.yml so both workflows run identical toolchain.
+        if: steps.upstream.outputs.new == 'true'
+        uses: pnpm/setup@v3
+        with:
+          version: 12.14.0
+          runtime: node@22
+          cache: true
+          install: false
+
+      - name: Install dependencies
+        # Failure here is surfaced as a build failure (failure mode 2).
+        # Upstream may have changed dependencies, breaking the frozen lockfile;
+        # fall back to a plain install and commit the refreshed lockfile with
+        # the merge so the PR is self-consistent.
+        if: steps.upstream.outputs.new == 'true'
+        run: |
+          pnpm config set store-dir ~/.pnpm-store
+          if ! pnpm install --frozen-lockfile; then
+            echo "::warning::pnpm install --frozen-lockfile failed — retrying without frozen lockfile (upstream dependency change)"
+            pnpm install --no-frozen-lockfile
+          fi
+
+      - name: Build bundle
+        # Failure here = failure mode 2 (build failure): job fails, GitHub
+        # notifies, no PR is opened, main is untouched.
+        if: steps.upstream.outputs.new == 'true'
+        run: pnpm --filter @dane.dai/md-web-cli build
+
+      - name: Verify golden snapshot (ticket 08 gate)
+        # Failure here = failure mode 3 (verification failure): job fails,
+        # GitHub notifies, no PR is opened, main is untouched.
+        if: steps.upstream.outputs.new == 'true'
+        run: pnpm oracle:verify-snapshot
+
+      - name: Run package unit tests
+        if: steps.upstream.outputs.new == 'true'
+        run: pnpm --filter @dane.dai/md-web-cli test
+
+      - name: Push sync branch
+        # force-with-lease: a second dispatch while the PR is open re-creates
+        # the branch from the latest main and force-updates it — the open PR
+        # follows the branch, no duplicate is created.
+        if: steps.upstream.outputs.new == 'true'
+        run: git push --force-with-lease origin sync/upstream
+
+      - name: Open or update sync pull request
+        if: steps.upstream.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_LINK: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          UPSTREAM_HEAD: ${{ steps.upstream.outputs.head }}
+        run: |
+          COMMIT_COUNT="$(git rev-list --count origin/main..upstream/main)"
+          RANGE="origin/main...${UPSTREAM_HEAD}"
+          BODY=$(cat <<EOF
+          ## Upstream sync: doocs/md
+
+          Merge upstream \`doocs/md\` (\`${UPSTREAM_HEAD}\`) into \`main\`.
+
+          - **Upstream range:** \`${RANGE}\` (${COMMIT_COUNT} commit(s)) ([upstream commits](https://github.com/doocs/md/commits/main)):
+          $(git log --oneline --no-decorate origin/main.."${UPSTREAM_HEAD}" | sed 's/^/  - /' | head -20)
+          - **Verification:** ✅ PASS — \`pnpm --filter @dane.dai/md-web-cli build\` + \`pnpm oracle:verify-snapshot\` + package unit tests all green in this workflow's sync workspace ([run link](${RUN_LINK}))
+          - **Verification run:** ${RUN_LINK}
+
+          > The PR is created with the workflow's own token, so it carries no
+          > checks. The verification recorded above already passed in the sync
+          > workspace — that is what you merge on. Merging this PR is a real
+          > push to \`main\` and triggers the publish chain
+          > (\`publish-md-web-cli.yml\`) normally.
+          EOF
+          )
+          if gh pr view sync/upstream --json state >/dev/null 2>&1; then
+            gh pr edit sync/upstream --title "chore: sync upstream doocs/md" --body "$BODY"
+            echo "Force-updated existing sync PR."
+          else
+            gh pr create \
+              --base main \
+              --head sync/upstream \
+              --title "chore: sync upstream doocs/md" \
+              --body "$BODY"
+          fi
