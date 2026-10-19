@@ -1,0 +1,28 @@
+{
+  "name": "@dane.dai/md-web-cli",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browserless doocs/md rendering CLI — single-file, zero-dependency Node bundle",
+  "bin": {
+    "md-web-cli": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22.22.2"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@md/config": "workspace:*",
+    "@md/core": "workspace:*",
+    "@md/shared": "workspace:*",
+    "@types/node": "catalog:",
+    "esbuild": ">=0.28.2",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

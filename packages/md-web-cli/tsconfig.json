@@ -1,0 +1,16 @@
+{
+  "extends": "@md/config/tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "../shared/src/global.d.ts",
+    "../shared/src/types/raw-imports.d.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

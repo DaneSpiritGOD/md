@@ -29,8 +29,8 @@
     "lint": "eslint . --fix",
     "type-check": "pnpm type-check:web && pnpm type-check:packages",
     "type-check:web": "pnpm --filter @md/web run type-check",
-    "type-check:packages": "pnpm --filter @md/core --filter @md/shared --filter @md/api --filter @md/mcp-server run type-check && pnpm --prefix ./apps/vscode run type-check",
-    "test": "pnpm --filter @md/shared test && pnpm --filter @md/core test && pnpm --filter @md/web test && pnpm --filter @md/api test",
+    "type-check:packages": "pnpm --filter @md/core --filter @md/shared --filter @md/api --filter @md/mcp-server --filter @dane.dai/md-web-cli run type-check && pnpm --prefix ./apps/vscode run type-check",
+    "test": "pnpm --filter @md/shared test && pnpm --filter @md/core test && pnpm --filter @md/web test && pnpm --filter @md/api test && pnpm --filter @dane.dai/md-web-cli test",
     "postinstall": "simple-git-hooks",
     "inspector": "pnpx node-modules-inspector",
     "utools:package": "node ./scripts/package-utools.mjs"
