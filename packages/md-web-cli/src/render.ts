@@ -21,11 +21,33 @@ function escapeStyleContent(css: string): string {
   return css.replace(/<\/style/gi, `<\\/style`)
 }
 
+/** Default body text color (site copy flow inherits rgb(10,10,10) from body). */
+export const DEFAULT_BODY_COLOR = `rgb(10,10,10)`
+
 function resolveHeadingStyles(config: RenderConfigInput): HeadingStyles | undefined {
-  // Custom per-heading styles arrive with ticket 05's --config; for now the
-  // site default (empty map = theme's built-in heading styles) applies.
-  void config
-  return undefined
+  return config.headingStyles
+}
+
+/**
+ * Body text color applied the way the copy flow does: a rule on the output
+ * container that every element inherits. Default rgb(10,10,10). The rendered
+ * fragment's root element is `<section class="container">`, so target that —
+ * juice inlines it onto the container in WeChat output.
+ */
+function generateBodyColorCSS(bodyColor: string): string {
+  return `section.container {\n  color: ${bodyColor};\n}`
+}
+
+/**
+ * Unscope the site's `#output`-scoped custom CSS so it matches the rendered
+ * fragment (apps/web stripOutputScope, before juice). `#output x` -> `x`;
+ * a bare `#output {` rule becomes the container rule.
+ */
+function unscopeCustomCSS(css: string): string {
+  return css
+    .replace(/#output\s*\{/g, `section.container {`)
+    .replace(/#output\s+/g, ``)
+    .replace(/^#output\s*/gm, ``)
 }
 
 export interface RenderResult {
@@ -84,12 +106,20 @@ export function renderMarkdownToStyledHtml(markdown: string, config: RenderConfi
   const themeCSS = themeMap[theme as keyof typeof themeMap]
   const hljsCSS = codeBlockThemeMap[codeBlockTheme]
 
+  // Order mirrors the site's applyTheme: variables, base, theme, heading
+  // styles, then the active CSS editor tab's custom CSS (site scopes custom
+  // CSS to #output; the intermediate form already targets #output).
+  const customCSS = config.customCss?.trim() ? unscopeCustomCSS(config.customCss) : ``
+  const bodyColorCSS = generateBodyColorCSS(config.bodyColor ?? DEFAULT_BODY_COLOR)
+
   const mergedCSS = [
     variablesCSS,
     baseCSSContent,
     themeCSS,
     headingStylesCSS,
     hljsCSS,
+    customCSS,
+    bodyColorCSS,
   ].filter(Boolean).join(`\n\n`)
 
   const html = `<style>\n${escapeStyleContent(processCSS(mergedCSS))}\n</style>\n${processedHtml}`
