@@ -19,8 +19,9 @@ const CLI_HTML = resolve(BASE, 'cli-output.html')
 
 // playwright 1.64 wants chromium_headless_shell-1248, which is not installed
 // here; the machine has the 1237 Chrome-for-Testing build from ticket 06's
-// Oracle run, so fall back to it when the default launch fails.
-const FALLBACK_EXECUTABLE = `${process.env.HOME}/Library/Caches/ms-playwright/chromium-1237/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
+// Oracle run, so fall back to it when the default launch fails. Override via
+// MD_WEB_CLI_CHROMIUM when the default and fallback both miss.
+const FALLBACK_EXECUTABLE = process.env.MD_WEB_CLI_CHROMIUM ?? `${process.env.HOME}/Library/Caches/ms-playwright/chromium-1237/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
 
 async function launch() {
   try {

@@ -11,6 +11,7 @@
  * unregistered code languages) so the CLI can fail loudly instead of silently
  * stripping them.
  */
+import process from 'node:process'
 import type { RenderConfigInput } from './types'
 import { JSDOM } from 'jsdom'
 import juice from 'juice'
@@ -153,6 +154,10 @@ function mergeCss(html: string): string {
     }
   }
 
+  // Every juice attempt failed: returning the un-inlined form would silently
+  // ship a non-WeChat-ready artifact (<style> block, no inline styles). The
+  // spec's loud-failure spirit says warn on stderr instead of staying quiet.
+  process.stderr.write(`md-web-cli: warning - CSS inlining failed after all fallback attempts; output still carries a <style> block and is NOT WeChat-ready\n`)
   return sanitized
 }
 

@@ -75,3 +75,7 @@ packages/md-web-cli/oracle
 
 # Playwright browser cache relocated inside the workspace when the home cache is not writable
 .playwright-browsers
+
+# implement-spec worktrees
+.wt-ticket-*
+.pnpm-store/

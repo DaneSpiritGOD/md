@@ -63,8 +63,18 @@ function fail(message: string): never {
   process.exit(1)
 }
 
-function parseBool(value?: string): boolean {
-  return value !== `false` && value !== `0`
+/**
+ * Consume the next argv token as the flag's explicit value only when it is a
+ * boolean literal (`true`/`false`/`1`/`0`). A bare `--flag` means true; this
+ * keeps a following positional input (or another flag) from being swallowed.
+ */
+function takeBool(argv: string[], i: number): { value: boolean, next: number } {
+  const raw = argv[i + 1]
+  if (raw === `true` || raw === `1`)
+    return { value: true, next: i + 1 }
+  if (raw === `false` || raw === `0`)
+    return { value: false, next: i + 1 }
+  return { value: true, next: i }
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -166,37 +176,49 @@ function parseArgs(argv: string[]): ParsedArgs {
       flags.blockquoteBackground = arg.slice(`--blockquote-background=`.length)
     }
     else if (arg === `--mac-code-block`) {
-      flags.isMacCodeBlock = parseBool(argv[i + 1])
+      const taken = takeBool(argv, i)
+      flags.isMacCodeBlock = taken.value
+      i = taken.next
     }
     else if (arg === `--no-mac-code-block`) {
       flags.isMacCodeBlock = false
     }
     else if (arg === `--show-line-number`) {
-      flags.isShowLineNumber = parseBool(argv[i + 1])
+      const taken = takeBool(argv, i)
+      flags.isShowLineNumber = taken.value
+      i = taken.next
     }
     else if (arg === `--no-show-line-number`) {
       flags.isShowLineNumber = false
     }
     else if (arg === `--cite-status`) {
-      flags.citeStatus = parseBool(argv[i + 1])
+      const taken = takeBool(argv, i)
+      flags.citeStatus = taken.value
+      i = taken.next
     }
     else if (arg === `--no-cite-status`) {
       flags.citeStatus = false
     }
     else if (arg === `--count-status`) {
-      flags.countStatus = parseBool(argv[i + 1])
+      const taken = takeBool(argv, i)
+      flags.countStatus = taken.value
+      i = taken.next
     }
     else if (arg === `--no-count-status`) {
       flags.countStatus = false
     }
     else if (arg === `--use-indent`) {
-      flags.isUseIndent = parseBool(argv[i + 1])
+      const taken = takeBool(argv, i)
+      flags.isUseIndent = taken.value
+      i = taken.next
     }
     else if (arg === `--no-use-indent`) {
       flags.isUseIndent = false
     }
     else if (arg === `--use-justify`) {
-      flags.isUseJustify = parseBool(argv[i + 1])
+      const taken = takeBool(argv, i)
+      flags.isUseJustify = taken.value
+      i = taken.next
     }
     else if (arg === `--no-use-justify`) {
       flags.isUseJustify = false

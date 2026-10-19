@@ -17,7 +17,9 @@ output equivalent to the site's WeChat copy flow for the shared fixture.
 
 The CLI render of `packages/md-web-cli/fixtures/full.md` confirmed here is
 committed as the **golden snapshot** at
-`packages/md-web-cli/golden/snapshot.html`. It is the semantic baseline for
+`packages/md-web-cli/golden/snapshot.html` — i.e. the snapshot IS the
+Tier-1-confirmed artifact (100/100 semantic property matches, see
+`semantic-diff-report.md` above). It is the semantic baseline for
 the Tier 2 gate used by the publish (ticket 09) and sync (ticket 10)
 workflows: `scripts/oracle/verify-snapshot.mjs` re-renders the fixture and
 asserts exit code 0, zero pending placeholders, WeChat-ready inline styles,
