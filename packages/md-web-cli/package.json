@@ -2,11 +2,15 @@
   "name": "@dane.dai/md-web-cli",
   "type": "module",
   "version": "0.1.0",
-  "private": true,
   "description": "Browserless doocs/md rendering CLI — single-file, zero-dependency Node bundle",
+  "license": "MIT",
   "bin": {
     "md-web-cli": "dist/cli.js"
   },
+  "files": [
+    "README.md",
+    "dist"
+  ],
   "engines": {
     "node": ">=22.22.2"
   },

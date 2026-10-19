@@ -1,0 +1,86 @@
+name: Publish md-web-cli
+
+# Ticket #9: push to main builds the md-web-cli bundle, runs the ticket-08
+# verify-snapshot gate, and (only when everything is green) publishes to npm
+# via OIDC trusted publishing. Red runs publish nothing; failure notification
+# is GitHub's built-in Actions email (account-level: Email + only failed
+# workflows) — no notification secrets or steps here.
+#
+# DANE: before the first successful publish, configure the npmjs trusted
+# publisher for @dane.dai/md-web-cli (npmjs.com → package/Automation settings):
+#   - package name: @dane.dai/md-web-cli
+#   - repository: DaneSpiritGOD/md
+#   - workflow filename: publish-md-web-cli.yml
+#   - environment: (leave empty — this workflow uses no GitHub environment)
+# The very first publish is manual (trusted publisher cannot be configured
+# before the package exists on npm); afterwards this workflow owns publishing.
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # OIDC trusted publishing — no NODE_AUTH_TOKEN anywhere below
+
+jobs:
+  verify-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/setup@v3
+        with:
+          version: 12.14.0
+          runtime: node@22
+          cache: true
+          install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build bundle
+        run: pnpm --filter @dane.dai/md-web-cli build
+
+      - name: Verify golden snapshot (ticket 08 gate)
+        run: pnpm oracle:verify-snapshot
+
+      - name: Run package unit tests
+        run: pnpm --filter @dane.dai/md-web-cli test
+
+      - name: Upgrade npm for OIDC trusted publishing
+        # Node 22 bundles npm 10.x; npm trusted publishing (id-token OIDC)
+        # requires npm >= 11.5.1.
+        run: npm install -g npm@latest
+
+      - name: Resolve publish version
+        id: resolve-version
+        working-directory: packages/md-web-cli
+        env:
+          # Same registry the gate/CI uses for reads; explicit so the repo
+          # .npmrc mirror cannot redirect version lookups.
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
+        run: node scripts/resolve-publish-version.mjs
+
+      - name: Apply publish version
+        working-directory: packages/md-web-cli
+        env:
+          PUBLISH_VERSION: ${{ steps.resolve-version.outputs.version }}
+        run: npm version "$PUBLISH_VERSION" --no-git-tag-version
+
+      - name: Publish to npm (OIDC trusted publishing)
+        working-directory: packages/md-web-cli
+        env:
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
+          # Deliberately NO NODE_AUTH_TOKEN: authentication is the job's
+          # id-token (npm provenance / trusted publishing).
+          NPM_CONFIG_PROVENANCE: 'true'
+        run: npm publish
