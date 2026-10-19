@@ -151,6 +151,7 @@ Web 主应用与部分浏览器扩展 UI 支持 **zh-CN**、**zh-TW**、**en-US*
 - **提交信息 / PR 标题:** 遵循 Conventional Commits（`feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`chore`），**一律使用英文**（见 `CONTRIBUTING.md`）
 - **分支命名:** `feat/description`、`fix/description`、`docs/description`；其他类型用 `<type>/`
 - **PR 说明:** 按 [`.github/pull_request_template.md`](./.github/pull_request_template.md) 填写；无关联 Issue 时不要写 Related Issue 占位符
+- **Fork-local 工作流:** 本 fork 自有改动（`md-web-cli` 包、其发布工作流与 fixture）直接推 `main`，不开 PR、不走上游 review；上游更新以 merge commit 进入 `main`。详见 [ADR-0001](./docs/adr/0001-fork-local-workflow.md)
 
 ## Skills
 

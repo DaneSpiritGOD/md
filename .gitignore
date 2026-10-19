@@ -66,3 +66,6 @@ dev-dist
 # uTools build artifacts
 apps/utools/dist
 apps/utools/release
+
+# Corepack cache, relocated inside the workspace when the home cache is not writable
+.corepack
