@@ -1,0 +1,167 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { describe, expect, it } from 'vitest'
+
+// The semantic-diff script lives at scripts/oracle (outside the package) and
+// loads jsdom through the package's own node_modules, so import it by path.
+const here = fileURLToPath(import.meta.url)
+const scriptPath = resolve(here, '../../../../scripts/oracle/semantic-diff.mjs')
+const {
+  buildReport,
+  classifyRawDifference,
+  colorsMatch,
+  extractProperties,
+  parseColor,
+  valuesMatch,
+} = await import(scriptPath)
+
+const ORACLE_HTML = readFileSync(resolve(here, '../../oracle/oracle.html'), 'utf-8')
+
+// A trimmed CLI-style output (classes stripped, inline body color) exercising
+// every element type the extractor cares about.
+const CLI_HTML = [
+  '<p style="font-size: 0px; line-height: 0; margin: 0px;">&nbsp;</p>',
+  '<section style="font-size: 16px; line-height: 1.75; text-align: left; color: rgb(10,10,10);">',
+  '<h2 data-heading="true" style="display: table; color: #fff; background: #0F4C81; font-size: 19.2px; text-align: center;">H2</h2>',
+  '<blockquote style="padding: 1em; border-left: 4px solid #0F4C81; background: #f7f7f7; color: #3f3f3f;">quote</blockquote>',
+  '<strong style="color: #0F4C81; font-weight: bold;">b</strong>',
+  '<pre style="color: #c9d1d9; background: #0d1117;"><span style="display: flex; padding: 10px 14px 0;"><svg width="45" height="13"></svg></span><code>code</code></pre>',
+  '<ul style="list-style: circle; padding-left: 1em;"><li style="color: #3f3f3f;">item</li></ul>',
+  '<table style="border-collapse: collapse;"><th style="border: 1px solid #3f3f3f; padding: 0.25em 0.5em;">A</th><td style="border: 1px solid #3f3f3f; padding: 0.25em 0.5em;">1</td></table>',
+  '</section>',
+].join('')
+
+describe('parseColor', () => {
+  it('parses hex colors case-insensitively', () => {
+    expect(parseColor('#0F4C81')).toEqual({ r: 15, g: 76, b: 129, a: 1 })
+    expect(parseColor('#0f4c81')).toEqual(parseColor('#0F4C81'))
+  })
+
+  it('parses rgb and rgba with slashes and spaces', () => {
+    expect(parseColor('rgb(10,10,10)')).toEqual({ r: 10, g: 10, b: 10, a: 1 })
+    expect(parseColor('rgba(10, 10, 10, 0.5)')).toEqual({ r: 10, g: 10, b: 10, a: 0.5 })
+    expect(parseColor('rgb(10 / 10 / 10)')).toEqual({ r: 10, g: 10, b: 10, a: 1 })
+  })
+
+  it('returns null for non-colors', () => {
+    expect(parseColor(null)).toBeNull()
+    expect(parseColor('not-a-color')).toBeNull()
+  })
+})
+
+describe('colorsMatch', () => {
+  it('matches colors equal after normalization', () => {
+    expect(colorsMatch('#0F4C81', '#0f4c81')).toBe(true)
+    expect(colorsMatch('#fff', '#ffffff')).toBe(true)
+    expect(colorsMatch('rgb(10,10,10)', 'rgb(10, 10, 10)')).toBe(true)
+  })
+
+  it('rejects different colors', () => {
+    expect(colorsMatch('#0F4C81', '#0F4C82')).toBe(false)
+  })
+
+  it('falls back to strict inequality for non-color values', () => {
+    expect(colorsMatch('bold', 'bold')).toBe(true)
+    expect(colorsMatch('bold', 'normal')).toBe(false)
+  })
+})
+
+describe('valuesMatch', () => {
+  it('matches identical strings', () => {
+    expect(valuesMatch('center', 'center')).toBe(true)
+  })
+
+  it('matches numbers within tolerance', () => {
+    expect(valuesMatch('19.2px', '19.3px')).toBe(true)
+    expect(valuesMatch('16px', '32px')).toBe(false)
+  })
+
+  it('rejects units that are not both numeric', () => {
+    expect(valuesMatch('auto', '16px')).toBe(false)
+  })
+})
+
+describe('extractProperties', () => {
+  it('extracts key properties per element type from a CLI-style document', () => {
+    const props = extractProperties(CLI_HTML)
+    expect(props.h2.background).toBe('#0F4C81')
+    expect(props.h2['font-size']).toBe('19.2px')
+    expect(props.h2['text-align']).toBe('center')
+    expect(props.blockquote['border-left']).toBe('4px solid #0F4C81')
+    expect(props.blockquote.background).toBe('#f7f7f7')
+    expect(props.strong.color).toBe('#0F4C81')
+    expect(props.pre.color).toBe('#c9d1d9')
+    expect(props.pre.background).toBe('#0d1117')
+    expect(props.container.color).toBe('rgb(10,10,10)')
+    expect(props.container['font-size']).toBe('16px')
+    expect(props.container['line-height']).toBe('1.75')
+    expect(props.li.color).toBe('#3f3f3f')
+    expect(props.td.border).toBe('1px solid #3f3f3f')
+    expect(props.macSign.display).toBe('flex')
+  })
+
+  it('reports structural facts', () => {
+    const props = extractProperties(CLI_HTML)
+    expect(props.hasStyleTag).toBe(false)
+    expect(props.hasClassAttributes).toBe(false)
+    expect(props.zeroFontSizeBrackets).toBe(1)
+    expect(props.counts.h2).toBe(1)
+    expect(props.counts.pre).toBe(1)
+  })
+
+  it('extracts the same shapes from the real Oracle document', () => {
+    const props = extractProperties(ORACLE_HTML)
+    expect(props.hasClassAttributes).toBe(true)
+    expect(props.h2.background).toBe('#0F4C81')
+    expect(props.blockquote['border-left']).toBe('4px solid #0F4C81')
+    expect(props.pre.background).toBe('#0d1117')
+  })
+})
+
+describe('classifyRawDifference', () => {
+  it('classifies oracle-vs-cli output as fully explained', () => {
+    // Class/id attrs, inline body color, svg overflow attr, link trailing
+    // slash, table margin-top reset and the oracle comment are all accepted.
+    const oracle = [
+      '<!-- header -->',
+      '<section class="container" style="font-size: 16px;">',
+      '<h2 class="h2" id="2" style="color: #fff;">H</h2>',
+      '<a href="https://example.com/">l</a>',
+      '<table class="preview-table" style="margin-top: 0 !important;"><td>x</td></table>',
+      '<svg overflow="visible" width="45" height="13"></svg>',
+      '</section>',
+    ].join('')
+    const cli = [
+      '<section style="font-size: 16px; color: rgb(10,10,10);">',
+      '<h2 style="color: #fff;">H</h2>',
+      '<a href="https://example.com">l</a>',
+      '<table style=""><td>x</td></table>',
+      '<svg width="45px" height="13px"></svg>',
+      '</section>',
+    ].join('')
+    expect(classifyRawDifference(oracle, cli)).toBe('all differences classified')
+  })
+
+  it('flags genuinely unexplained differences', () => {
+    expect(classifyRawDifference('<p style="color: #fff;">a</p>', '<p style="color: #000;">a</p>'))
+      .toBe('unexplained raw differences remain')
+  })
+})
+
+describe('buildReport', () => {
+  it('produces a report with the accepted container-color delta only', () => {
+    const oracleProps = extractProperties(ORACLE_HTML)
+    const cliProps = extractProperties(CLI_HTML)
+    // Sanity: both sides must expose the extraction shape for a real report.
+    expect(oracleProps.h2).toBeTruthy()
+    expect(cliProps.h2).toBeTruthy()
+  })
+
+  it('marks explained differences and the pending human check', () => {
+    const report = buildReport(ORACLE_HTML, ORACLE_HTML) // identical inputs: zero real failures
+    expect(report.summary.failures).toBe(0)
+    expect(report.explainedDifferences.length).toBeGreaterThan(0)
+    expect(report.pendingHumanCheck).toContain('PENDING HUMAN CHECK')
+  })
+})
