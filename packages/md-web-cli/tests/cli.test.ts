@@ -40,7 +40,7 @@ afterAll(() => {
 })
 
 describe('cli subprocess: render', () => {
-  it('converts the fixture to HTML containing the theme <style> block and full body', () => {
+  it('converts the fixture to WeChat-ready HTML with inlined styles and full body', () => {
     const dir = makeTmpDir()
     const out = path.join(dir, 'out.html')
     const result = runCli(['render', fixturePath, '-o', out])
@@ -48,11 +48,12 @@ describe('cli subprocess: render', () => {
     expect(result.status).toBe(0)
     expect(fs.existsSync(out)).toBe(true)
     const html = fs.readFileSync(out, 'utf-8')
-    expect(html.startsWith('<style>')).toBe(true)
-    expect(html).toContain('</style>')
-    expect(html).toContain('preview-table')
-    expect(html).toContain('mac-sign')
-    expect(html).toContain('--md-font-size: 16px')
+    // Ticket 04: no <style> block — everything is inlined into style attributes.
+    expect((html.match(/<style/g) ?? []).length).toBe(0)
+    expect(html).not.toMatch(/\sclass\s*=/i)
+    expect(html).toContain('font-family')
+    // Mac code-block title bar survives class stripping as an inlined span.
+    expect(html).toContain('padding: 10px 14px 0')
   }, 30_000)
 
   it('exits non-zero with a clear stderr message for a missing input file', () => {
@@ -74,4 +75,81 @@ describe('cli subprocess: render', () => {
     expect(result.status).not.toBe(0)
     expect(result.stderr).toMatch(/Unknown command/)
   })
+})
+
+describe('cli subprocess: WeChat output + pending placeholders (ticket 04)', () => {
+  function writeFixture(dir: string, content: string): string {
+    const file = path.join(dir, 'in.md')
+    fs.writeFileSync(file, content, 'utf-8')
+    return file
+  }
+
+  it('clean fixture exits zero, empty stderr, WeChat-ready output without placeholder residue', () => {
+    const dir = makeTmpDir()
+    const out = path.join(dir, 'out.html')
+    const result = runCli(['render', fixturePath, '-o', out])
+
+    expect(result.status).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(fs.existsSync(out)).toBe(true)
+    const html = fs.readFileSync(out, 'utf-8')
+    expect((html.match(/<style/g) ?? []).length).toBe(0)
+    expect(html.match(/\sclass\s*=/i)).toBeNull()
+    expect(html).not.toMatch(/data-md-diagram-state="loading"/)
+    expect(html).not.toMatch(/data-language-pending/)
+    expect(html).not.toMatch(/Loading Mermaid|Loading infographic|Loading PlantUML/)
+    // Every block-level element carries an inline style. Bare <tr> is
+    // acceptable: the renderer emits styled cells, and WeChat ignores tr styles.
+    for (const match of html.matchAll(/<(section|p|h[1-6]|ul|ol|li|table|th|td|blockquote|pre)\b([^>]*)>/gi)) {
+      expect(match[2]).toMatch(/\sstyle=/i)
+    }
+  }, 60_000)
+
+  it('mermaid fence exits non-zero, writes no output file, explains cause and way forward', () => {
+    const dir = makeTmpDir()
+    const out = path.join(dir, 'out.html')
+    const input = writeFixture(dir, '# Diagram\n\n```mermaid\ngraph TD\nA-->B\n```\n')
+    const result = runCli(['render', input, '-o', out])
+
+    expect(result.status).not.toBe(0)
+    expect(fs.existsSync(out)).toBe(false)
+    expect(result.stderr).toMatch(/mermaid/i)
+    expect(result.stderr).toMatch(/handle the diagram manually|fall back to the browser backend/i)
+  }, 60_000)
+
+  it('katex syntax exits non-zero the same way', () => {
+    const dir = makeTmpDir()
+    const out = path.join(dir, 'out.html')
+    const input = writeFixture(dir, 'Math: $e^{i\\pi}+1=0$\n')
+    const result = runCli(['render', input, '-o', out])
+
+    expect(result.status).not.toBe(0)
+    expect(fs.existsSync(out)).toBe(false)
+    expect(result.stderr).toMatch(/KaTeX/i)
+    expect(result.stderr).toMatch(/fall back to the browser backend/i)
+  }, 60_000)
+
+  it('infographic block exits non-zero the same way', () => {
+    const dir = makeTmpDir()
+    const out = path.join(dir, 'out.html')
+    const input = writeFixture(dir, '```infographic\n{"type":"bar","data":[1,2]}\n```\n')
+    const result = runCli(['render', input, '-o', out])
+
+    expect(result.status).not.toBe(0)
+    expect(fs.existsSync(out)).toBe(false)
+    expect(result.stderr).toMatch(/infographic/i)
+    expect(result.stderr).toMatch(/handle the diagram manually|fall back to the browser backend/i)
+  }, 60_000)
+
+  it('unregistered code language (go) exits non-zero the same way', () => {
+    const dir = makeTmpDir()
+    const out = path.join(dir, 'out.html')
+    const input = writeFixture(dir, '```go\nfunc main() {}\n```\n')
+    const result = runCli(['render', input, '-o', out])
+
+    expect(result.status).not.toBe(0)
+    expect(fs.existsSync(out)).toBe(false)
+    expect(result.stderr).toMatch(/\bgo\b/)
+    expect(result.stderr).toMatch(/fall back to the browser backend/i)
+  }, 60_000)
 })

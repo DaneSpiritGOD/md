@@ -2,13 +2,16 @@
  * CLI entry for @dane.dai/md-web-cli.
  *
  * Ticket 03 contract: `render <in.md> -o <out.html>` with site defaults.
+ * Ticket 04: output is WeChat-ready (inlined styles, no <style> block, no
+ * class attributes) and pending placeholders (mermaid/KaTeX/infographic/
+ * unregistered languages) fail the run instead of being silently stripped.
  * Structured so ticket 05 can add --config / --raw / --body-color etc.
  * without reshaping the command dispatch.
  */
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
-import { renderMarkdownToStyledHtml } from './render'
+import { PendingPlaceholderError, renderMarkdownToWeChatHtml } from './wechat'
 
 interface ParsedArgs {
   input?: string
@@ -66,9 +69,16 @@ function runRender(argv: string[]): void {
 
   let result
   try {
-    result = renderMarkdownToStyledHtml(markdown)
+    result = renderMarkdownToWeChatHtml(markdown)
   }
   catch (error) {
+    if (error instanceof PendingPlaceholderError) {
+      process.stderr.write(`md-web-cli: render failed — ${error.message}\n`)
+      for (const placeholder of error.placeholders) {
+        process.stderr.write(`  - ${placeholder.kind}: ${placeholder.detail}\n`)
+      }
+      process.exit(1)
+    }
     fail(error instanceof Error ? error.message : String(error))
   }
 

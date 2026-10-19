@@ -36,7 +36,7 @@ describe('zero-network conversion', () => {
       outPath,
     ], { encoding: 'utf-8' })
     const html = await readFile(outPath, 'utf-8')
-    expect(html).toContain('<style>')
+    expect(html).toContain(`font-family`)
     expect(html.length).toBeGreaterThan(1000)
   })
 })

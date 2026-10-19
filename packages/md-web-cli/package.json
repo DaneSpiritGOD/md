@@ -21,8 +21,11 @@
     "@md/config": "workspace:*",
     "@md/core": "workspace:*",
     "@md/shared": "workspace:*",
+    "@types/jsdom": "^30.0.0",
     "@types/node": "catalog:",
     "esbuild": ">=0.28.2",
+    "jsdom": "^30.1.3",
+    "juice": "^12.2.0",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
