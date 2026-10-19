@@ -77,10 +77,14 @@ function firstNumber(value) {
 
 /** Compare two (possibly css-length) values numerically where possible. */
 export function valuesMatch(a, b) {
-  if (a === b)
+  // CSS reformatting (e.g. a wrapped font-family list) is not a visual
+  // difference: collapse all whitespace runs before comparing.
+  const ca = a?.replace(/\s+/g, ` `).trim()
+  const cb = b?.replace(/\s+/g, ` `).trim()
+  if (ca === cb)
     return true
-  const na = firstNumber(a)
-  const nb = firstNumber(b)
+  const na = firstNumber(ca)
+  const nb = firstNumber(cb)
   if (na === null || nb === null)
     return false
   const scale = Math.max(Math.abs(na), Math.abs(nb), 1)
