@@ -52,6 +52,48 @@ describe('parseColor', () => {
     expect(parseColor(null)).toBeNull()
     expect(parseColor('not-a-color')).toBeNull()
   })
+
+  describe('boundary inputs', () => {
+    it('expands 4-digit hex shorthand (#f00f) with an alpha channel', () => {
+      expect(parseColor('#f00f')).toEqual({ r: 255, g: 0, b: 0, a: 1 })
+      expect(parseColor('#0f08')).toEqual({ r: 0, g: 255, b: 0, a: 136 / 255 })
+    })
+
+    it('parses 8-digit hex (#rrggbbaa) instead of treating it as non-color', () => {
+      expect(parseColor('#0f4c81ff')).toEqual({ r: 15, g: 76, b: 129, a: 1 })
+      expect(parseColor('#0f4c8180')).toEqual({ r: 15, g: 76, b: 129, a: 128 / 255 })
+    })
+
+    it('converts rgb() percentage channels to 0-255', () => {
+      expect(parseColor('rgb(100%,0%,0%)')).toEqual({ r: 255, g: 0, b: 0, a: 1 })
+      expect(parseColor('rgb(0%, 50%, 0%)')).toEqual({ r: 0, g: 128, b: 0, a: 1 })
+    })
+
+    it('rounds fractional channels and clamps out-of-range channels', () => {
+      expect(parseColor('rgb(10.5,10,10)')).toEqual({ r: 11, g: 10, b: 10, a: 1 })
+      // Before: rgb(300,0,0) parsed as r=300; now clamped like a browser would.
+      expect(parseColor('rgb(300,0,0)')).toEqual({ r: 255, g: 0, b: 0, a: 1 })
+      expect(parseColor('rgb(-5,0,0)')).toEqual({ r: 0, g: 0, b: 0, a: 1 })
+      expect(parseColor('rgba(0,0,0,2)')).toEqual({ r: 0, g: 0, b: 0, a: 1 })
+      expect(parseColor('rgba(0,0,0,50%)')).toEqual({ r: 0, g: 0, b: 0, a: 0.5 })
+    })
+
+    it('rejects malformed input instead of guessing', () => {
+      expect(parseColor('rgb(1,2)')).toBeNull()
+      expect(parseColor('rgb(1,2,3,4,5)')).toBeNull()
+      expect(parseColor('rgb(1,2,xyz)')).toBeNull()
+      expect(parseColor('rgb(1,2,3,abc)')).toBeNull()
+      expect(parseColor('#ff')).toBeNull()
+      expect(parseColor('#ggg')).toBeNull()
+    })
+
+    it('does not parse named colors (documented limitation)', () => {
+      // Both sides of every comparison are serialized CSS, which uses hex/rgb;
+      // a named color would silently compare as "not a color" and fall back to
+      // strict string equality in colorsMatch.
+      expect(parseColor('red')).toBeNull()
+    })
+  })
 })
 
 describe('colorsMatch', () => {
@@ -61,11 +103,23 @@ describe('colorsMatch', () => {
     expect(colorsMatch('rgb(10,10,10)', 'rgb(10, 10, 10)')).toBe(true)
   })
 
+  it('matches colors written in different notations', () => {
+    expect(colorsMatch('rgb(255,0,0)', '#ff0000')).toBe(true)
+    expect(colorsMatch('rgb(255,0,0)', '#f00')).toBe(true)
+    expect(colorsMatch('rgb(100%,0%,0%)', '#ff0000')).toBe(true)
+    expect(colorsMatch('#0f4c81ff', '#0f4c81')).toBe(true)
+  })
+
   it('rejects different colors', () => {
     expect(colorsMatch('#0F4C81', '#0F4C82')).toBe(false)
   })
 
-  it('falls back to strict inequality for non-color values', () => {
+  it('compares alpha within its own tolerance', () => {
+    expect(colorsMatch('rgba(10,10,10,0.5)', 'rgba(10,10,10,0.505)')).toBe(true)
+    expect(colorsMatch('rgba(10,10,10,0)', 'rgb(10,10,10)')).toBe(false)
+  })
+
+  it('falls back to strict string inequality for non-color values', () => {
     expect(colorsMatch('bold', 'bold')).toBe(true)
     expect(colorsMatch('bold', 'normal')).toBe(false)
   })
@@ -83,6 +137,47 @@ describe('valuesMatch', () => {
 
   it('rejects units that are not both numeric', () => {
     expect(valuesMatch('auto', '16px')).toBe(false)
+  })
+
+  describe('numeric tolerance boundaries', () => {
+    it('accepts 1% relative differences and rejects larger ones', () => {
+      // 19.2px -> tolerance max(0.5, 0.192) = 0.5px
+      expect(valuesMatch('19.2px', '19.7px')).toBe(true)
+      expect(valuesMatch('19.2px', '19.71px')).toBe(false)
+      // Large values are governed by the relative term: 1000px -> 10px
+      expect(valuesMatch('1000px', '1009px')).toBe(true)
+      expect(valuesMatch('1000px', '1011px')).toBe(false)
+    })
+
+    it('applies the 0.5 absolute floor around zero', () => {
+      expect(valuesMatch('0px', '0.5px')).toBe(true)
+      expect(valuesMatch('0px', '0.51px')).toBe(false)
+    })
+
+    it('compares negative lengths by magnitude', () => {
+      expect(valuesMatch('-10px', '-10.2px')).toBe(true)
+      expect(valuesMatch('-10px', '-11px')).toBe(false)
+    })
+
+    it('compares only the first length in a shorthand', () => {
+      // Documented limitation: `10px 8px` vs `10px 20px` compares 10 vs 10.
+      expect(valuesMatch('10px 8px', '10px 20px')).toBe(true)
+    })
+
+    it('treats two missing values as equal', () => {
+      expect(valuesMatch(null, null)).toBe(true)
+    })
+  })
+
+  describe('known limitation: unit is ignored when both sides carry the same number', () => {
+    it('matches 16px against 16em (tolerance must not paper over unit changes)', () => {
+      // These are NOT visually equal (16em = 256px). The golden-snapshot gate
+      // shares this helper, so a unit typo in a theme would pass the gate.
+      // Pinned here so the limitation is visible; fixing it needs a separate
+      // decision because it widens what the gate rejects.
+      expect(valuesMatch('16px', '16em')).toBe(true)
+      expect(valuesMatch('100%', '100px')).toBe(true)
+    })
   })
 })
 

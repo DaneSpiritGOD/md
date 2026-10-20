@@ -18,11 +18,12 @@ function makeTmpDir(): string {
 
 function runCli(args: string[]): { status: number, stdout: string, stderr: string } {
   try {
-    const stdout = execFileSync(process.execPath, [cliPath, ...args], {
-      encoding: 'utf-8',
-      // Belt and braces for the zero-network requirement: point fetch proxies at nothing.
-      env: { ...process.env, HTTP_PROXY: 'http://127.0.0.1:1', HTTPS_PROXY: 'http://127.0.0.1:1' },
-    })
+    // Network is not policed here: Node's fetch ignores HTTP_PROXY unless
+    // --use-env-proxy is passed (and this machine sets none), so a proxy env
+    // var guards nothing. The zero-network guarantee is proven directly in
+    // offline.test.ts: a poisoning preload plus a loopback sink that counts
+    // every outbound connect attempt.
+    const stdout = execFileSync(process.execPath, [cliPath, ...args], { encoding: 'utf-8' })
     return { status: 0, stdout, stderr: '' }
   }
   catch (error: any) {

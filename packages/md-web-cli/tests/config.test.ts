@@ -101,8 +101,12 @@ describe('multi-tab CSS editor config', () => {
     }
     const styled = renderMarkdownToStyledHtml(`# Hello`, normalizeDesignerConfig(raw))
     expect(styled.html).toContain(`h2 { color: blue; }`)
-    expect(styled.html).not.toContain(`color:red`)
-    expect(styled.html).not.toContain(`color: red`)
+    // Neither tab-1's custom CSS nor the default theme may leak into the output.
+    // Compare semantically: custom CSS is re-serialized by the CSS pipeline
+    // (whitespace collapsed, colors lowercased), so a literal `color: red`
+    // would never match and the assertion would pass no matter what.
+    expect(styled.html).not.toMatch(/color:\s*(?:#f00|#ff0000|rgba?\(\s*255,\s*0,\s*0\b)/i)
+    expect(styled.html).not.toMatch(/color:\s*red\b/i)
   })
 
   it('--css-tab overrides the selection by id or name', () => {
