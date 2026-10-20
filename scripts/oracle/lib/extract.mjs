@@ -25,34 +25,46 @@ export const NUMERIC_ABS_TOLERANCE = 0.5
 /** Per-channel rgb delta tolerated after normalization (hex -> rgb, case, spacing). */
 export const COLOR_CHANNEL_TOLERANCE = 0
 
-/** Parse a css color to { r, g, b, alpha } or null when unparseable. */
+/** Parse a css color to { r, g, b, a } or null when unparseable. */
 export function parseColor(value) {
   if (!value)
     return null
   const v = value.trim().toLowerCase()
-  let m = v.match(/^#([0-9a-f]{3})$/)
+  let m = v.match(/^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/)
   if (m) {
-    const [r, g, b] = m[1].split('').map(c => Number.parseInt(c + c, 16))
-    return { r, g, b, a: 1 }
-  }
-  m = v.match(/^#([0-9a-f]{6})$/)
-  if (m) {
-    return {
-      r: Number.parseInt(m[1].slice(0, 2), 16),
-      g: Number.parseInt(m[1].slice(2, 4), 16),
-      b: Number.parseInt(m[1].slice(4, 6), 16),
-      a: 1,
-    }
+    let hex = m[1]
+    // 3- and 4-digit hex are shorthand: each nibble doubles (#f00 -> #ff0000).
+    if (hex.length < 6)
+      hex = [...hex].map(c => c + c).join(``)
+    const channel = i => Number.parseInt(hex.slice(i, i + 2), 16)
+    const a = hex.length === 8 ? channel(6) / 255 : 1
+    return { r: channel(0), g: channel(2), b: channel(4), a }
   }
   m = v.match(/^rgba?\(([^)]+)\)$/)
   if (m) {
     const parts = m[1].split(/[\s,/]+/).filter(Boolean)
-    const rgb = parts.slice(0, 3).map(p => Number.parseFloat(p))
-    const a = parts[3] !== undefined ? Number.parseFloat(parts[3]) : 1
-    if (rgb.every(n => !Number.isNaN(n)))
-      return { r: rgb[0], g: rgb[1], b: rgb[2], a }
+    if (parts.length < 3 || parts.length > 4)
+      return null
+    const channels = parts.slice(0, 3).map(parseRgbChannel)
+    const alpha = parts[3] === undefined ? 1 : parseAlpha(parts[3])
+    if (channels.every(n => n !== null) && alpha !== null)
+      return { r: channels[0], g: channels[1], b: channels[2], a: alpha }
   }
   return null
+}
+
+/** rgb() channel: `255` or `100%` -> 0-255 integer, clamped; anything unparseable -> null. */
+function parseRgbChannel(raw) {
+  const percent = /^(\d+(?:\.\d+)?)%$/.exec(raw)
+  const n = percent ? Number.parseFloat(percent[1]) * 255 / 100 : /^-?\d+(?:\.\d+)?$/.test(raw) ? Number.parseFloat(raw) : null
+  return n === null ? null : Math.min(255, Math.max(0, Math.round(n)))
+}
+
+/** rgba() alpha: `0.5` or `50%` -> 0-1, clamped; anything unparseable -> null. */
+function parseAlpha(raw) {
+  const percent = /^(\d+(?:\.\d+)?)%$/.exec(raw)
+  const n = percent ? Number.parseFloat(percent[1]) / 100 : /^\d+(?:\.\d+)?$/.test(raw) ? Number.parseFloat(raw) : null
+  return n === null ? null : Math.min(1, Math.max(0, n))
 }
 
 /** Compare two color-ish values with channel tolerance; non-colors fall back to string compare. */
