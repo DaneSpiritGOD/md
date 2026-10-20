@@ -79,3 +79,6 @@ packages/md-web-cli/oracle
 # implement-spec worktrees
 .wt-ticket-*
 .pnpm-store/
+
+# local scratch docs (handoff notes, keep out of git)
+temp/
