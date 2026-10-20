@@ -82,7 +82,6 @@ describe('renderMarkdownToStyledHtml', () => {
     expect(result.html).toContain('#576b95')
     // github-dark highlighting colors shipped inline (zero network)
     expect(result.html).toMatch(/\.hljs\b/)
-    expect(result.html).toMatch(/github-dark/i.test(result.html) ? /./ : /./)
     const styleBlock = result.html.slice(0, result.html.indexOf('</style>'))
     expect(styleBlock).toContain('#0d1117') // github-dark background
   })
