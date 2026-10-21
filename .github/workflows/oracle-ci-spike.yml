@@ -1,0 +1,85 @@
+name: Oracle CI Spike
+
+# Spike for issue #16: can `rebuild-oracle.mjs` run headless on a Linux
+# GitHub runner and capture the browser clipboard? The real Oracle rebuild
+# has only ever run locally on macOS. This workflow is throwaway — it checks
+# out an explicit ref, runs the unmodified script, and dumps diagnostics so
+# the headless path can be validated before anything depends on it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to check out (branch, tag, or SHA)
+        required: true
+        default: feat/md-web-cli
+
+permissions:
+  contents: read
+
+jobs:
+  oracle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/setup@v3
+        with:
+          version: 12.14.0
+          runtime: node@22
+          cache: true
+          install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Report environment
+        run: |
+          node -v
+          uname -a
+          ls "$HOME/.cache/ms-playwright" 2>/dev/null || true
+
+      - name: Build web app
+        run: pnpm --filter @md/web build:only
+
+      - name: Rebuild browser Oracle (headless)
+        id: rebuild
+        continue-on-error: true
+        run: node scripts/oracle/rebuild-oracle.mjs 2>&1 | tee oracle-rebuild.log
+
+      - name: Mask the clipboard output
+        if: always()
+        run: |
+          f=packages/md-web-cli/oracle/oracle.html
+          if [ -f "$f" ]; then
+            echo "ORACLE_HTML_BYTES=$(wc -c < "$f")"
+            echo "ORACLE_HTML_BYTES=$(wc -c < "$f")" >> "$GITHUB_STEP_SUMMARY"
+            echo "head:"
+            head -c 300 "$f"
+          else
+            echo "oracle.html was not produced" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-ci-spike
+          path: |
+            packages/md-web-cli/oracle/oracle.html
+            packages/md-web-cli/oracle/oracle-report.json
+            oracle-rebuild.log
+          if-no-files-found: warn
+
+      - name: Fail if the Oracle rebuild failed
+        if: steps.rebuild.outcome != 'success'
+        run: exit 1
