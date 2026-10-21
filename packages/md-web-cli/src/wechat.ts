@@ -11,8 +11,8 @@
  * unregistered code languages) so the CLI can fail loudly instead of silently
  * stripping them.
  */
-import process from 'node:process'
 import type { RenderConfigInput } from './types'
+import process from 'node:process'
 import { JSDOM } from 'jsdom'
 import juice from 'juice'
 import { siteDefaultRenderConfig } from './defaults'
