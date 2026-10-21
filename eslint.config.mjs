@@ -4,7 +4,10 @@ export default antfu({
   vue: true,
   typescript: true,
   formatters: true,
-  ignores: [`.github`, `docker`, `packages/md-cli`, `src/assets`, `example`, `apps/web/src/assets/example/`, `packages/md-web-cli/fixtures/`],
+  // `scripts` stays ignored to match upstream. Upstream never lints it, and
+  // un-ignoring it here surfaced pre-existing errors in files this fork does
+  // not own (see issue #15).
+  ignores: [`.github`, `scripts`, `docker`, `packages/md-cli`, `src/assets`, `example`, `apps/web/src/assets/example/`, `packages/md-web-cli/fixtures/`],
 }, {
   rules: {
     'semi': [`error`, `never`],
