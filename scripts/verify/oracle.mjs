@@ -115,11 +115,21 @@ function launchOptions() {
 
 async function readPreviewState(page) {
   return page.evaluate(() => {
+    // Cheap rolling hash, in-page: text identity without shipping the text out.
+    const hashText = (value) => {
+      let hash = 0
+      for (let index = 0; index < value.length; index++)
+        hash = (hash * 31 + value.charCodeAt(index)) | 0
+      return hash
+    }
     const output = document.getElementById(`output`)
     if (!output)
       return null
     return {
       length: output.innerHTML.length,
+      // The signature has to change when only the text changes: a custom
+      // fixture could otherwise render with the same element counts as the
+      // app's default document and never look "ready".
       signature: [
         output.innerHTML.length,
         output.querySelectorAll(`h1, h2, h3, h4, h5, h6`).length,
@@ -127,6 +137,7 @@ async function readPreviewState(page) {
         output.querySelectorAll(`section`).length,
         output.querySelectorAll(`pre`).length,
         output.querySelectorAll(`p`).length,
+        hashText(output.textContent ?? ``),
       ].join(`|`),
       text: output.textContent ?? ``,
       pendingDiagram: !!output.querySelector(`[data-md-diagram-state="loading"]`),
