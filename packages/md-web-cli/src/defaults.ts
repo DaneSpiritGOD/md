@@ -6,6 +6,7 @@
  * the site shows the mac code-block title bar and highlights with the
  * `github-dark` theme; the MCP defaults use a light theme and no mac bar.
  */
+import type { HeadingStyles } from '@md/shared/configs/style'
 import type { LegendValue } from './types'
 
 /** Site default font stack (sans-serif) as used by the web app. */
@@ -31,5 +32,13 @@ export const siteDefaultRenderConfig = {
   isUseIndent: false,
   isUseJustify: false,
 }
+
+/**
+ * Effective heading-style default. The Designer export cannot carry
+ * `headingStyles`, so both sides resolve its absence to "no per-level
+ * overrides" rather than inventing one; `tests/defaults.test.ts` asserts this
+ * matches the app's own default.
+ */
+export const siteDefaultHeadingStyles: HeadingStyles = {}
 
 export type SiteDefaultRenderConfig = typeof siteDefaultRenderConfig
