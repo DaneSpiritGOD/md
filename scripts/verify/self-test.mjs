@@ -51,10 +51,13 @@ const CASES = [
 /**
  * @param {string} knownGoodHtml A CLI render that already passes the structural
  *   assertions.
- * @returns {{baselineProblems: Array, cases: Array<{name: string, rejected: boolean, expectedKind: string|null, matchedKinds: string[], compareRejected: boolean, firstReason: string}>}}
+ * @returns {{baselineProblems: Array, positiveControl: boolean, cases: Array<{name: string, rejected: boolean, expectedKind: string|null, matchedKinds: string[], expectedKindFound: boolean, firstReason: string}>}}
  */
 export function runSelfTest(knownGoodHtml) {
   const baselineProblems = findStructuralProblems(knownGoodHtml)
+  // Positive control: a comparator that always reports a difference would make
+  // every reverse case "pass" for the wrong reason.
+  const positiveControl = compareOutputs(knownGoodHtml, knownGoodHtml).equal
 
   const cases = CASES.map((testCase) => {
     const mutant = testCase.mutate(knownGoodHtml)
@@ -66,12 +69,11 @@ export function runSelfTest(knownGoodHtml) {
       name: testCase.name,
       expectedKind: testCase.expectKind,
       matchedKinds,
-      compareRejected: !comparison.equal,
       rejected: !comparison.equal && expectedKindFound,
       expectedKindFound,
       firstReason: problems[0]?.detail ?? `byte comparison rejected the mutant`,
     }
   })
 
-  return { baselineProblems, cases }
+  return { baselineProblems, positiveControl, cases }
 }

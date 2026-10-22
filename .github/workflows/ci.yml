@@ -94,6 +94,14 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
+      # The config-projection acceptance needs a browser, so it runs here
+      # instead of in the fast suite. Blocking: it guards a real regression
+      # (an export's article content leaking into the comparison).
+      - name: Run browser-gated CLI tests
+        env:
+          MD_WEB_CLI_BROWSER_TESTS: '1'
+        run: pnpm --filter @dane.dai/md-web-cli exec vitest run tests/verify-config.test.ts
+
       # TEMPORARY: non-blocking while the gate is red on purpose. The difference
       # classes are visible in the log on every change. The transition to
       # blocking is an explicit decision, recorded per

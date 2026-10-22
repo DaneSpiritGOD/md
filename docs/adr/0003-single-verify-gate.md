@@ -10,7 +10,7 @@
 - Failure output is actionable rather than binary: a summary grouped by difference class with counts and locations, the complete unified diff, a total hunk count, and both rendered outputs plus the diff under a printed temporary path.
 - The command accepts the same Designer config the maintainer publishes with, projected down to render-affecting keys and fed identically to both sides. Article content carried in an export can never leak into the comparison.
 - The non-browser assertions the old verifier owned survive inside the comparator: no pending placeholders, and WeChat-ready output with inline styles. A reverse-case self-test corrupts a known-good render and asserts the gate rejects each mutant, so the gate's ability to fail is itself tested without a browser.
-- Only two test seams exist: the `verify` process boundary (exit code, summary shape, artifacts written) and the site-default parity unit test. Rendered-output assertions live inside the byte comparison rather than in separate scripts.
+- Two seams carry the gate's external behaviour: the `verify` process boundary (exit code, summary shape, artifacts written, and the config-projection case) and the site-default parity unit test. The structural helpers migrated from the retired verifier keep the unit coverage they already had. Rendered-output assertions live inside the byte comparison rather than in separate scripts.
 - The repository contains no Oracle HTML, no report, and no golden snapshot. Everything regenerable is produced into a temporary directory at run time.
 
 ### The gate deliberately landed red

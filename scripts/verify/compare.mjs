@@ -18,7 +18,7 @@ const MAX_LCS_LINES = 4000
  * newlines, so line-diffing the raw text would collapse every difference into a
  * handful of unreadable hunks.
  */
-export function explodeHtml(html) {
+function explodeHtml(html) {
   return html.replace(/></g, `>\n<`).split(`\n`)
 }
 
@@ -162,7 +162,7 @@ function parseStyleDeclarations(value) {
  * failure is the class-attribute difference or a real style drift without any
  * allow-list deciding the verdict.
  */
-export function classifyLinePair(removed, added) {
+function classifyLinePair(removed, added) {
   const classes = new Set()
   if (removed === undefined) {
     classes.add(`structure`)
@@ -221,6 +221,11 @@ export function classifyLinePair(removed, added) {
     if (!before.attrs.has(name))
       classes.add(`attribute:${name}`)
   }
+
+  // Same tag, same attributes, different text: content drift.
+  const textOf = line => line.replace(/<[^>]*>/g, ``)
+  if (textOf(removed) !== textOf(added))
+    classes.add(`text`)
 
   return [...classes]
 }

@@ -1,8 +1,8 @@
-import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { runVerify } from './helpers/run-verify'
 
 /**
  * Config projection at the verify process seam.
@@ -14,30 +14,9 @@ import { describe, expect, it } from 'vitest'
  * never compares an article carried in the export".
  */
 
-const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), `../../..`)
-const scriptPath = path.join(repoRoot, `scripts/verify.mjs`)
 const browserTests = Boolean(process.env.MD_WEB_CLI_BROWSER_TESTS)
 
 const ARTICLE_MARKER = `ARTICLE MARKER: this article must never be rendered`
-
-function runVerify(args: string[]): { status: number, stdout: string, stderr: string } {
-  try {
-    const stdout = execFileSync(process.execPath, [scriptPath, ...args], {
-      encoding: `utf-8`,
-      cwd: repoRoot,
-      stdio: [`ignore`, `pipe`, `pipe`],
-      timeout: 240_000,
-    })
-    return { status: 0, stdout, stderr: `` }
-  }
-  catch (error: any) {
-    return {
-      status: error.status ?? 1,
-      stdout: error.stdout ?? ``,
-      stderr: error.stderr ?? String(error.message),
-    }
-  }
-}
 
 describe.skipIf(!browserTests)(`verify command: Designer config`, () => {
   it(`compares the fixture, never the article carried in the export`, () => {
@@ -78,7 +57,7 @@ describe.skipIf(!browserTests)(`verify command: Designer config`, () => {
         cssContentConfig: { active: `default`, tabs: [{ id: `default`, title: `default`, name: `default`, content: `` }] },
       }), `utf-8`)
 
-      const { stdout, stderr } = runVerify([`--fixture`, `minimal`, `--config`, configPath, `--out-dir`, outDir])
+      const { stdout, stderr } = runVerify([`--fixture`, `minimal`, `--config`, configPath, `--out-dir`, outDir], 240_000)
       const combined = `${stdout}${stderr}`
 
       expect(combined).toContain(`article-content`)

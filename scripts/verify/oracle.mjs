@@ -14,18 +14,17 @@
 import { createReadStream, existsSync, statSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
-import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
+import { extname, join, normalize, resolve } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { assertOutsideRepository, REPO_ROOT } from './paths.mjs'
 
-const HERE = dirname(fileURLToPath(import.meta.url))
-const REPO_ROOT = resolve(HERE, `../..`)
 const WEB_DIST = resolve(REPO_ROOT, `apps/web/dist`)
 const BUILD_COMMAND = `pnpm --filter @md/web build:only`
 
 const NAV_TIMEOUT_MS = 60_000
 const PREVIEW_TIMEOUT_MS = 60_000
+const COPY_TIMEOUT_MS = 30_000
 const STABILITY_POLLS = 6
 const POLL_INTERVAL_MS = 250
 
@@ -46,17 +45,6 @@ const MIME = {
   '.ttf': `font/ttf`,
   '.map': `application/json`,
   '.txt': `text/plain; charset=utf-8`,
-}
-
-function assertOutsideRepo(outDir) {
-  const resolved = resolve(outDir)
-  if (resolved === REPO_ROOT || resolved.startsWith(`${REPO_ROOT}${sep}`)) {
-    throw new Error(
-      `Oracle output directory must be outside the repository (received ${resolved}). `
-      + `The Oracle is a runtime capability, never a committed artifact; pass a fresh temp directory.`,
-    )
-  }
-  return resolved
 }
 
 function assertBuilt(distDir) {
@@ -214,7 +202,7 @@ export async function captureOracle(options) {
     afterLoad,
   } = options
 
-  const safeOutDir = assertOutsideRepo(outDir)
+  const safeOutDir = assertOutsideRepository(outDir, `Oracle output directory`)
   assertBuilt(distDir)
   if (!existsSync(fixturePath))
     throw new Error(`fixture not found: ${fixturePath}`)
@@ -283,32 +271,38 @@ export async function captureOracle(options) {
 
     await waitForStablePreview(page, before.signature)
 
-    // Trigger the real WeChat copy flow (公众号格式).
+    // Trigger the real WeChat copy flow through the header's copy button.
     const copyButton = page.locator(`header button:has-text("复制"), .header-container button:has-text("复制")`).first()
     if (await copyButton.count() === 0)
       throw new Error(`WeChat copy button not found in header — has the header markup changed?`)
     await copyButton.click()
 
-    await page.waitForFunction(() => {
-      const buttons = [...document.querySelectorAll('button')]
-      return buttons.some(button => button.textContent?.includes(`复制`))
-        && !document.querySelector('[data-sonner-toast][data-type="loading"]')
-    }, { timeout: 30_000 })
-    await page.waitForTimeout(500)
-
-    const clipboardHtml = await page.evaluate(async () => {
-      const items = await navigator.clipboard.read()
-      for (const item of items) {
-        if (item.types.includes(`text/html`)) {
-          const blob = await item.getType(`text/html`)
-          return await blob.text()
+    // The clipboard is the app's own completion signal: the copy flow writes
+    // `text/html` when it finishes, so poll it instead of sleeping past the
+    // button's spinner. A fresh browser context starts with an empty clipboard.
+    const clipboardDeadline = Date.now() + COPY_TIMEOUT_MS
+    let clipboardHtml = ``
+    while (Date.now() < clipboardDeadline) {
+      clipboardHtml = await page.evaluate(async () => {
+        const items = await navigator.clipboard.read()
+        for (const item of items) {
+          if (item.types.includes(`text/html`)) {
+            const blob = await item.getType(`text/html`)
+            return await blob.text()
+          }
         }
-      }
-      return ``
-    })
+        return ``
+      })
+      if (clipboardHtml)
+        break
+      await new Promise(r => setTimeout(r, 100))
+    }
 
-    if (!clipboardHtml)
-      throw new Error(`clipboard text/html is empty — the copy flow did not produce output`)
+    if (!clipboardHtml) {
+      throw new Error(
+        `clipboard text/html is still empty after ${COPY_TIMEOUT_MS / 1000}s — the copy flow did not produce output`,
+      )
+    }
 
     if (pageErrors.length > 0)
       process.stderr.write(`[oracle] warning: ${pageErrors.length} page error(s): ${pageErrors[0]}\n`)

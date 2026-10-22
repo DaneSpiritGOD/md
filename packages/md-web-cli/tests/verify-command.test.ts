@@ -1,8 +1,8 @@
-import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { runVerify } from './helpers/run-verify'
 
 /**
  * The verify gate's process seam, browser-free half.
@@ -12,27 +12,6 @@ import { describe, expect, it } from 'vitest'
  * without the eight-second Oracle capture. The failure-path coverage that needs
  * a render belongs to the reverse-case self-test.
  */
-
-const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), `../../..`)
-const scriptPath = path.join(repoRoot, `scripts/verify.mjs`)
-
-function runVerify(args: string[]): { status: number, stdout: string, stderr: string } {
-  try {
-    const stdout = execFileSync(process.execPath, [scriptPath, ...args], {
-      encoding: `utf-8`,
-      cwd: repoRoot,
-      stdio: [`ignore`, `pipe`, `pipe`],
-    })
-    return { status: 0, stdout, stderr: `` }
-  }
-  catch (error: any) {
-    return {
-      status: error.status ?? 1,
-      stdout: error.stdout ?? ``,
-      stderr: error.stderr ?? String(error.message),
-    }
-  }
-}
 
 describe(`verify command: options`, () => {
   it(`documents fixtures, config, and artifact handling in --help`, () => {

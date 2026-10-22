@@ -29,10 +29,15 @@ directory:
 ## 2. Paste both
 
 1. Open the WeChat 公众号 editor (`mp.weixin.qq.com`) in a desktop browser.
-2. Open `cli.html` in a text editor, select all, copy, and paste into the
+2. Open `cli.html` in **another browser tab** — the file is HTML with inline
+   styles, so copying from a text editor would paste markup instead of a
+   rendered article. Select all in the rendered page, copy, and paste into the
    editor body. Screenshot the result.
 3. Clear the editor. Repeat with `oracle.html`. Screenshot the result.
 4. Compare the two screenshots side by side, or open both in two windows.
+
+If the pasted result looks like raw HTML source, the copy came from the file
+rather than the rendered page; start again from step 2.
 
 ## 3. What to look for
 

@@ -83,6 +83,7 @@ describe(`reverse-case self-test`, () => {
     ]) {
       expect(output).toContain(`PASS: ${name} -> gate rejects it`)
     }
+    expect(output).toContain(`PASS: identical input compares equal`)
     expect(output).toContain(`7 reverse case(s)`)
   }, 120_000)
 })

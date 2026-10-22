@@ -132,8 +132,9 @@ two Chromium builds on two operating systems produce byte-identical Oracle HTML.
 ## Status in CI
 
 - **CI** runs the gate on every push and pull request as a **non-blocking**
-  signal, with the browser cached on the Playwright version. The diff is visible
-  in the log; the job stays green.
+  signal, with the browser cached on the Playwright version. A red gate is
+  visible in the log and does not fail the job; an infrastructure failure around
+  it (the browser download, for instance) still fails CI.
 - **Publish** and **upstream sync** run the same command and are **blocking**: a
   red gate publishes nothing and holds the sync pull request.
 

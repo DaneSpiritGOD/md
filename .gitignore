@@ -70,8 +70,6 @@ apps/utools/release
 # Corepack cache, relocated inside the workspace when the home cache is not writable
 .corepack
 
-# Ticket 06 browser Oracle rebuild output (regenerated on demand; CI uploads it as an artifact)
-
 # Playwright browser cache relocated inside the workspace when the home cache is not writable
 .playwright-browsers
 

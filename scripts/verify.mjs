@@ -17,16 +17,14 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
 import { compareOutputs } from './verify/compare.mjs'
 import { assertConfigApplied, buildConfigSeedScript, ConfigError, projectDesignerConfig } from './verify/config.mjs'
+import { assertOutsideRepository, REPO_ROOT } from './verify/paths.mjs'
 import { runSelfTest } from './verify/self-test.mjs'
 import { findStructuralProblems } from './verify/structural.mjs'
 
-const HERE = dirname(fileURLToPath(import.meta.url))
-const REPO_ROOT = resolve(HERE, `..`)
 const CLI_BUNDLE = resolve(REPO_ROOT, `packages/md-web-cli/dist/cli.js`)
 const FIXTURE_DIR = resolve(REPO_ROOT, `packages/md-web-cli/fixtures`)
 
@@ -41,11 +39,13 @@ const FIXTURES = {
   full: {
     path: join(FIXTURE_DIR, `full.md`),
     role: `product signal`,
+    summary: `headings, tables, code blocks, lists, blockquotes, images, links, rules`,
     failureMeaning: `a difference here is a product fidelity difference`,
   },
   minimal: {
     path: join(FIXTURE_DIR, `minimal.md`),
     role: `infrastructure probe`,
+    summary: `heading, paragraph, inline code — a failure means the harness is broken and a pass proves nothing about product fidelity`,
     failureMeaning: `a probe failure means the harness is broken, not that rendering drifted`,
   },
 }
@@ -65,11 +65,10 @@ the same fixture through the CLI, and compares the outputs byte for byte. Exits
 non-zero on any difference. There is no tolerance, allow-list, or known-gaps
 mechanism.
 
-Fixtures:
-  full      Full-coverage fixture — the product signal (default)
-  minimal   Heading, paragraph, inline code — an infrastructure probe only: a
-            failure means the harness is broken, a pass proves nothing about
-            product fidelity
+Fixtures (both run by default):
+${
+  Object.entries(FIXTURES).map(([name, fixture]) => `  ${name.padEnd(9)} ${fixture.role} — ${fixture.summary}`).join(`\n`)
+}
 
 Options:
   --fixture <name|path>   Run one fixture (or a path to a Markdown file) instead
@@ -92,7 +91,7 @@ function fail(message) {
   throw new VerifyError(message)
 }
 
-export function parseArgs(argv) {
+function parseArgs(argv) {
   const args = { keep: false, fixture: null }
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index]
@@ -207,7 +206,7 @@ function printPass(fixture, html) {
   process.stdout.write(
     `[verify] PASS ${fixture.name} (${fixture.role}): outputs are byte-identical (${Buffer.byteLength(html, `utf8`)} bytes)\n`,
   )
-  if (fixture.name === `minimal`)
+  if (fixture.role === `infrastructure probe`)
     process.stdout.write(`[verify] note: a green infrastructure probe proves nothing about product fidelity\n`)
 }
 
@@ -295,7 +294,15 @@ async function runSelfTestMode() {
       describe: `CLI render failed; the self-test needs a known-good render`,
     })
 
-    const { baselineProblems, cases } = runSelfTest(readFileSync(knownGoodPath, `utf8`))
+    const { baselineProblems, positiveControl, cases } = runSelfTest(readFileSync(knownGoodPath, `utf8`))
+    if (!positiveControl) {
+      process.stderr.write(
+        `[self-test] FAIL: identical input did not compare equal; every reverse case would pass for the wrong reason\n`,
+      )
+      return 1
+    }
+    process.stdout.write(`[self-test] PASS: identical input compares equal\n`)
+
     if (baselineProblems.length > 0) {
       process.stderr.write(`[self-test] baseline render is not WeChat-ready; cannot self-test against it:\n`)
       for (const problem of baselineProblems)
@@ -356,9 +363,18 @@ async function main() {
   }
 
   const keepArtifacts = Boolean(args.outDir || args.keep)
-  const workDir = args.outDir
-    ? resolve(process.cwd(), args.outDir)
-    : mkdtempSync(join(tmpdir(), `md-verify-`))
+  let workDir
+  if (args.outDir) {
+    try {
+      workDir = assertOutsideRepository(resolve(process.cwd(), args.outDir), `--out-dir`)
+    }
+    catch (error) {
+      fail(error.message)
+    }
+  }
+  else {
+    workDir = mkdtempSync(join(tmpdir(), `md-verify-`))
+  }
   mkdirSync(workDir, { recursive: true })
   process.stdout.write(`[verify] artifacts: ${workDir}\n`)
 
@@ -382,6 +398,8 @@ async function main() {
     }
 
     buildEverything()
+    // Loaded lazily: this module pulls in Playwright, and --help, argument
+    // validation, and --self-test must not pay for the browser driver.
     const { captureOracle } = await import(`./verify/oracle.mjs`)
 
     const results = []

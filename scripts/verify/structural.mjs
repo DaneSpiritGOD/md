@@ -61,8 +61,11 @@ export function findPendingPlaceholders(html) {
 /**
  * Scan for output that is not WeChat-ready.
  *
- * `exempt` is exposed so the self-test can document — and test — the structural
- * exemptions rather than trusting them.
+ * The exemptions are a documented product rule, not a convenience: WeChat
+ * formats table sections, rows, and SVG structurally, so demanding an inline
+ * style on them would report a difference that does not exist. The full
+ * fixture contains tables, so the baseline render in the self-test fails if
+ * these stop being honoured.
  */
 export function findInlineStyleProblems(html) {
   const problems = []
