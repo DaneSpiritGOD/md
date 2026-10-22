@@ -6,14 +6,11 @@ import { expect, it } from 'vitest'
 /**
  * Behavioural guard for WeChat-ready output produced through the real CLI path.
  *
- * verify-snapshot.mjs (and its --self-test) guards the golden artifact, but the
- * verifier replaces lib/extract.mjs with a reduced copy: it has no
- * structural/count checks and its class-attribute scan reads a boolean where a
- * match list is expected (`classAttrs.length` of `true` is undefined, so the
- * comparison is always false). A no-op renderer that drops juice and class
- * stripping therefore passes the verifier; this file catches that at the
- * source, and the structural probe below keeps the verifier's blind spot
- * pinned.
+ * The verify gate asserts these invariants on its own output, but it only sees
+ * what the built bundle produces. A regression that drops juice or class
+ * stripping inside the renderer would be caught there — late, and only if the
+ * gate runs. This file pins the same behaviour at the source so the fast suite
+ * fails first.
  */
 import { renderMarkdownToWeChatHtml } from '../src/wechat'
 
@@ -38,19 +35,18 @@ it('fixture render is WeChat-ready: no <style>, no class attributes, inline styl
   expect(missing).toEqual([])
 })
 
-it('extractProperties reports the structural facts the verifier relies on', async () => {
+it('the gate structural assertions accept a real CLI render of the fixture', async () => {
   const { readFileSync } = await import('node:fs')
-  const { extractProperties } = await import('../../../scripts/oracle/lib/extract.mjs')
+  const { findStructuralProblems } = await import('../../../scripts/verify/structural.mjs')
   const { execFileSync } = await import('node:child_process')
   const dir = mkdtempSync(path.join(tmpdir(), 'md-web-cli-struct-'))
   try {
     const out = path.join(dir, 'out.html')
     execFileSync(process.execPath, [path.join(repoRoot, 'packages/md-web-cli/dist/cli.js'), 'render', fixturePath, '-o', out])
-    const props = extractProperties(readFileSync(out, 'utf-8'))
-    expect(props.hasStyleTag).toBe(false)
-    expect(props.hasClassAttributes).toBe(false)
-    expect(props.counts.h2).toBeGreaterThan(0)
-    expect(props.counts.pre).toBeGreaterThan(0)
+    const html = readFileSync(out, 'utf-8')
+    expect(findStructuralProblems(html)).toEqual([])
+    expect(html.match(/<h2\b/g)?.length ?? 0).toBeGreaterThan(0)
+    expect(html.match(/<pre\b/g)?.length ?? 0).toBeGreaterThan(0)
   }
   finally {
     rmSync(dir, { recursive: true, force: true })

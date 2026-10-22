@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { findInlineStyleProblems, findPendingPlaceholders, findStructuralProblems } from '../../../scripts/verify/structural.mjs'
 
 /**
- * Coverage adapted from the retired verify-snapshot verifier.
+ * Coverage adapted from the verifier the byte-exact gate replaced.
  *
  * The script those tests imported is gone from the gate path, but the
  * invariants it protected are not: pending placeholders must never ship, the
