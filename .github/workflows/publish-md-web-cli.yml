@@ -1,10 +1,14 @@
 name: Publish md-web-cli
 
-# Ticket #9: push to main builds the md-web-cli bundle, runs the ticket-08
-# verify-snapshot gate, and (only when everything is green) publishes to npm
-# via OIDC trusted publishing. Red runs publish nothing; failure notification
-# is GitHub's built-in Actions email (account-level: Email + only failed
-# workflows) — no notification secrets or steps here.
+# Ticket #9: push to main runs the verify gate (which builds the md-web-cli
+# bundle itself, captures a browser Oracle, and compares byte for byte) and,
+# only when everything is green, publishes to npm via OIDC trusted publishing.
+# Red runs publish nothing; failure notification is GitHub's built-in Actions
+# email (account-level: Email + only failed workflows) — no notification
+# secrets or steps here.
+#
+# While the gate is deliberately red (see docs/adr/0003-single-verify-gate.md),
+# this workflow stays blocking on purpose: a red gate publishes nothing.
 #
 # DANE: before the first successful publish, configure the npmjs trusted
 # publisher for @dane.dai/md-web-cli (npmjs.com → package/Automation settings):
@@ -47,11 +51,24 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build bundle
-        run: pnpm --filter @dane.dai/md-web-cli build
+      - name: Resolve Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: Verify golden snapshot (ticket 08 gate)
-        run: pnpm oracle:verify-snapshot
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Builds both workspaces itself (never a previously built bundle), captures
+      # a fresh Oracle, and compares byte for byte. Non-zero exits here publish
+      # nothing: every later step is skipped.
+      - name: Verify rendering (wcli:verify)
+        run: pnpm wcli:verify
 
       - name: Run package unit tests
         run: pnpm --filter @dane.dai/md-web-cli test

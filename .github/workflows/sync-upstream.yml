@@ -3,13 +3,14 @@ name: Sync upstream doocs/md
 # Ticket #10: weekly cron + manual dispatch upstream sync.
 #
 # Flow: fetch upstream (doocs/md) → if upstream/main has commits not yet on
-# main, merge them into the `sync/upstream` branch in this workspace → build
-# md-web-cli and run the ticket-08 verify-snapshot gate (same scripts as
-# publish-md-web-cli.yml so the two never disagree about what passes) → push
-# the branch and open — or force-update an already-open — PR into main whose
-# body records the verification result and this run link. The human reviews
-# the diff and merges manually; that merge is a real push to main and
-# triggers the publish chain (publish-md-web-cli.yml) normally.
+# main, merge them into the `sync/upstream` branch in this workspace → run the
+# verify gate (same `pnpm wcli:verify` as publish-md-web-cli.yml, so the two
+# never disagree about what passes) → push the branch and open — or
+# force-update an already-open — PR into main whose body records the
+# verification result rendered from this run's actual outcome, plus this run
+# link. The human reviews the diff and merges manually; that merge is a real
+# push to main and triggers the publish chain (publish-md-web-cli.yml)
+# normally.
 #
 # The PR is created with GITHUB_TOKEN, so it carries no checks — events from
 # the default token do not trigger workflows. The verification that already
@@ -18,8 +19,12 @@ name: Sync upstream doocs/md
 # Failure modes (all surface as job failure → GitHub's built-in Actions
 # notification; no PR is opened, nothing is pushed):
 #   1. Merge conflict   — "Merge upstream main" step fails.
-#   2. Build failure    — "Build bundle" step fails.
-#   3. Verify failure   — "Verify golden snapshot" step fails.
+#   2. Build failure    — the build inside `pnpm wcli:verify` fails.
+#   3. Verify failure   — `pnpm wcli:verify` exits non-zero (the gate is red).
+#
+# While the gate is deliberately red (docs/adr/0003-single-verify-gate.md),
+# this workflow stays blocking on purpose: upstream merges are held until the
+# known differences are worked through.
 #
 # No new upstream commits → job exits successfully, no PR, no branch change.
 
@@ -109,17 +114,41 @@ jobs:
             pnpm install --no-frozen-lockfile
           fi
 
-      - name: Build bundle
-        # Failure here = failure mode 2 (build failure): job fails, GitHub
-        # notifies, no PR is opened, main is untouched.
+      - name: Resolve Playwright version
         if: steps.upstream.outputs.new == 'true'
-        run: pnpm --filter @dane.dai/md-web-cli build
+        id: playwright
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: Verify golden snapshot (ticket 08 gate)
-        # Failure here = failure mode 3 (verification failure): job fails,
-        # GitHub notifies, no PR is opened, main is untouched.
+      - name: Cache Playwright browsers
         if: steps.upstream.outputs.new == 'true'
-        run: pnpm oracle:verify-snapshot
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install Playwright Chromium
+        if: steps.upstream.outputs.new == 'true'
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Verify rendering (wcli:verify)
+        id: verify
+        # Failure here = failure mode 2 or 3: the build inside the gate or the
+        # comparison failed. Job fails, GitHub notifies, no PR is opened, main
+        # is untouched.
+        if: steps.upstream.outputs.new == 'true'
+        run: |
+          set +e
+          pnpm wcli:verify 2>&1 | tee verify.log
+          STATUS=${PIPESTATUS[0]}
+          set -e
+          if [ "$STATUS" -ne 0 ]; then
+            # Recorded so the PR body can never claim a success that did not
+            # happen; this step exits before any PR step runs.
+            echo "result=FAILED" >> "$GITHUB_OUTPUT"
+            echo "::error::pnpm wcli:verify failed — nothing was pushed and no PR was opened"
+            exit "$STATUS"
+          fi
+          echo "result=PASSED" >> "$GITHUB_OUTPUT"
 
       - name: Run package unit tests
         if: steps.upstream.outputs.new == 'true'
@@ -129,18 +158,27 @@ jobs:
         # force-with-lease: a second dispatch while the PR is open re-creates
         # the branch from the latest main and force-updates it — the open PR
         # follows the branch, no duplicate is created.
-        if: steps.upstream.outputs.new == 'true'
+        if: steps.upstream.outputs.new == 'true' && steps.verify.outputs.result == 'PASSED'
         run: git push --force-with-lease origin sync/upstream
 
       - name: Open or update sync pull request
-        if: steps.upstream.outputs.new == 'true'
+        if: steps.upstream.outputs.new == 'true' && steps.verify.outputs.result == 'PASSED'
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_LINK: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           UPSTREAM_HEAD: ${{ steps.upstream.outputs.head }}
+          VERIFY_RESULT: ${{ steps.verify.outputs.result }}
         run: |
           COMMIT_COUNT="$(git rev-list --count origin/main..upstream/main)"
           RANGE="origin/main...${UPSTREAM_HEAD}"
+          # Rendered from the run's real outcome. A failed verification exits
+          # before this step, so this line can never claim a success that did
+          # not happen.
+          if [ "${VERIFY_RESULT}" = "PASSED" ]; then
+            VERIFY_LINE="✅ PASSED — \`pnpm wcli:verify\` (build + fresh Oracle + byte-exact comparison + structural assertions) and package unit tests are green in this workflow's sync workspace"
+          else
+            VERIFY_LINE="❌ ${VERIFY_RESULT:-NOT RUN} — \`pnpm wcli:verify\` did not pass; this pull request must not be merged"
+          fi
           BODY=$(cat <<EOF
           ## Upstream sync: doocs/md
 
@@ -148,12 +186,12 @@ jobs:
 
           - **Upstream range:** \`${RANGE}\` (${COMMIT_COUNT} commit(s)) ([upstream commits](https://github.com/doocs/md/commits/main)):
           $(git log --oneline --no-decorate origin/main.."${UPSTREAM_HEAD}" | sed 's/^/  - /' | head -20)
-          - **Verification:** ✅ PASS — \`pnpm --filter @dane.dai/md-web-cli build\` + \`pnpm oracle:verify-snapshot\` + package unit tests all green in this workflow's sync workspace ([run link](${RUN_LINK}))
+          - **Verification:** ${VERIFY_LINE} ([run link](${RUN_LINK}))
           - **Verification run:** ${RUN_LINK}
 
           > The PR is created with the workflow's own token, so it carries no
-          > checks. The verification recorded above already passed in the sync
-          > workspace — that is what you merge on. Merging this PR is a real
+          > checks. The verification recorded above is this run's actual
+          > result in the sync workspace — that is what you merge on. Merging this PR is a real
           > push to \`main\` and triggers the publish chain
           > (\`publish-md-web-cli.yml\`) normally.
           EOF
