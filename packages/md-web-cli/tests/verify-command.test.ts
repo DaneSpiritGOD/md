@@ -68,7 +68,16 @@ describe(`verify command: missing inputs`, () => {
 
     expect(status).toBe(1)
     expect(stderr).toContain(`fixture not found:`)
-    expect(stderr).toContain(`known names: full`)
+    expect(stderr).toContain(`known names: full, minimal`)
+  })
+
+  it(`resolves the infrastructure-probe fixture by name`, () => {
+    // Reaching the config check proves the fixture name resolved; an unknown
+    // name would have failed earlier with "fixture not found".
+    const { status, stderr } = runVerify([`--fixture`, `minimal`, `--config`, `no-such-config.json`])
+
+    expect(status).toBe(1)
+    expect(stderr).toContain(`config not found:`)
   })
 
   it(`fails loudly for a config file that does not exist`, () => {

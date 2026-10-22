@@ -25,14 +25,26 @@ import { compareOutputs } from './verify/compare.mjs'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(HERE, `..`)
 const CLI_BUNDLE = resolve(REPO_ROOT, `packages/md-web-cli/dist/cli.js`)
+const FIXTURE_DIR = resolve(REPO_ROOT, `packages/md-web-cli/fixtures`)
 
 /**
- * Fixture registry. `full` is the product signal; the minimal
- * infrastructure-probe fixture is added by its own change so a broken harness
- * stays distinguishable from a rendering difference.
+ * Fixture registry.
+ *
+ * `full` is the product signal. `minimal` is an infrastructure probe: its
+ * failure means the harness is broken, its success proves nothing about
+ * product fidelity. Both run by default so one command yields both signals.
  */
 const FIXTURES = {
-  full: resolve(REPO_ROOT, `packages/md-web-cli/fixtures/full.md`),
+  full: {
+    path: join(FIXTURE_DIR, `full.md`),
+    role: `product signal`,
+    failureMeaning: `a difference here is a product fidelity difference`,
+  },
+  minimal: {
+    path: join(FIXTURE_DIR, `minimal.md`),
+    role: `infrastructure probe`,
+    failureMeaning: `a probe failure means the harness is broken, not that rendering drifted`,
+  },
 }
 
 const BUILD_COMMANDS = [
@@ -45,18 +57,26 @@ class VerifyError extends Error {}
 function printUsage() {
   process.stdout.write(`Usage: node scripts/verify.mjs [options]
 
-Builds the CLI bundle, captures a fresh browser Oracle, renders the same fixture
-through the CLI, and compares the two outputs byte for byte. Exits non-zero on
-any difference. There is no tolerance, allow-list, or known-gaps mechanism.
+Builds the CLI bundle, captures a fresh browser Oracle for each fixture, renders
+the same fixture through the CLI, and compares the outputs byte for byte. Exits
+non-zero on any difference. There is no tolerance, allow-list, or known-gaps
+mechanism.
+
+Fixtures:
+  full      Full-coverage fixture — the product signal (default)
+  minimal   Heading, paragraph, inline code — an infrastructure probe only: a
+            failure means the harness is broken, a pass proves nothing about
+            product fidelity
 
 Options:
-  --fixture <name|path>   Fixture to verify (name: ${Object.keys(FIXTURES).join(`, `)})
-                          or a path to a Markdown file
+  --fixture <name|path>   Run one fixture (or a path to a Markdown file) instead
+                          of both registry fixtures
   --config <file>         Designer config JSON; projected to render-affecting
                           keys and given identically to both sides. The five
                           style keys a Designer export cannot carry fall back
                           to each side's own site defaults
-  --out-dir <dir>         Write artifacts here and keep them (implies --keep)
+  --out-dir <dir>         Write artifacts here and keep them (implies --keep;
+                          must be outside the repository)
   --keep                  Keep the artifacts and print their paths
   -h, --help              Show this help
 `)
@@ -67,7 +87,7 @@ function fail(message) {
 }
 
 export function parseArgs(argv) {
-  const args = { fixture: `full`, keep: false }
+  const args = { keep: false, fixture: null }
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index]
     const next = () => {
@@ -98,17 +118,15 @@ export function parseArgs(argv) {
   return args
 }
 
-function resolveFixture(value) {
-  if (value in FIXTURES) {
-    const path = FIXTURES[value]
-    if (!existsSync(path))
-      fail(`fixture not found: ${path}`)
-    return { name: value, path }
-  }
+function resolveFixtures(value) {
+  if (value === null)
+    return Object.entries(FIXTURES).map(([name, fixture]) => ({ name, ...fixture }))
+  if (value in FIXTURES)
+    return [{ name: value, ...FIXTURES[value] }]
   const path = resolve(process.cwd(), value)
   if (!existsSync(path))
     fail(`fixture not found: ${path} (known names: ${Object.keys(FIXTURES).join(`, `)})`)
-  return { name: value, path }
+  return [{ name: value, path, role: `custom fixture`, failureMeaning: `outputs differ` }]
 }
 
 function run(command, args, options = {}) {
@@ -149,12 +167,13 @@ function formatLocations(locations) {
   return `${shown.join(`, `)}${suffix}`
 }
 
-function printFailure(fixtureName, oracleHtml, cliHtml, comparison) {
+function printFailure(fixture, oracleHtml, cliHtml, comparison) {
   process.stderr.write(
-    `[verify] FAIL ${fixtureName}: outputs are not byte-identical `
+    `[verify] FAIL ${fixture.name} (${fixture.role}): outputs are not byte-identical `
     + `(oracle ${Buffer.byteLength(oracleHtml, `utf8`)} bytes, CLI ${Buffer.byteLength(cliHtml, `utf8`)} bytes, `
     + `first difference at byte ${comparison.firstDifference})\n`,
   )
+  process.stderr.write(`[verify] ${fixture.failureMeaning}\n`)
   process.stderr.write(`[verify] difference classes (${comparison.hunkCount} hunks total):\n`)
   for (const entry of comparison.classes) {
     process.stderr.write(
@@ -168,10 +187,58 @@ function printFailure(fixtureName, oracleHtml, cliHtml, comparison) {
   )
 }
 
-function printPass(fixtureName, html) {
+function printPass(fixture, html) {
   process.stdout.write(
-    `[verify] PASS ${fixtureName}: outputs are byte-identical (${Buffer.byteLength(html, `utf8`)} bytes)\n`,
+    `[verify] PASS ${fixture.name} (${fixture.role}): outputs are byte-identical (${Buffer.byteLength(html, `utf8`)} bytes)\n`,
   )
+  if (fixture.name === `minimal`)
+    process.stdout.write(`[verify] note: a green infrastructure probe proves nothing about product fidelity\n`)
+}
+
+function printSummary(results) {
+  const passed = results.filter(result => result.comparison.equal).length
+  process.stdout.write(
+    `[verify] summary: ${results.length} fixture(s) — ${passed} passed, ${results.length - passed} failed\n`,
+  )
+  for (const { fixture, comparison } of results) {
+    const verdict = comparison.equal ? `PASS` : `FAIL`
+    const detail = comparison.equal ? `` : ` — ${comparison.hunkCount} hunks: ${fixture.failureMeaning}`
+    process.stdout.write(`  ${verdict} ${fixture.name} (${fixture.role})${detail}\n`)
+  }
+}
+
+async function verifyFixture({ fixture, workDir, configPath, captureOracle }) {
+  const artifactDir = join(workDir, fixture.name)
+  process.stdout.write(`[verify] fixture: ${fixture.name} — ${fixture.role}\n`)
+
+  const oracleHtml = await captureOracle({ fixturePath: fixture.path, outDir: artifactDir })
+  const cliOutPath = join(artifactDir, `cli.html`)
+  renderThroughCli(fixture.path, cliOutPath, configPath)
+  const cliHtml = readFileSync(cliOutPath, `utf8`)
+
+  const comparison = compareOutputs(oracleHtml, cliHtml)
+  writeFileSync(join(artifactDir, `diff.txt`), comparison.unifiedDiff, `utf8`)
+  writeFileSync(
+    join(artifactDir, `report.txt`),
+    comparison.equal
+      ? `PASS: outputs are byte-identical (${Buffer.byteLength(oracleHtml, `utf8`)} bytes)\n`
+      : `FAIL: ${comparison.hunkCount} hunks across ${comparison.classes.length} class(es)\n${
+        comparison.classes.map(entry => `${entry.name}: ${entry.locations.length} hunks at lines ${entry.locations.join(`, `)}\n`).join(``)
+      }`,
+    `utf8`,
+  )
+
+  if (comparison.equal)
+    printPass(fixture, oracleHtml)
+  else
+    printFailure(fixture, oracleHtml, cliHtml, comparison)
+
+  process.stdout.write(`[verify] oracle: ${join(artifactDir, `oracle.html`)}\n`)
+  process.stdout.write(`[verify] cli:    ${cliOutPath}\n`)
+  process.stdout.write(`[verify] diff:   ${join(artifactDir, `diff.txt`)}\n`)
+  process.stdout.write(`[verify] report: ${join(artifactDir, `report.txt`)}\n`)
+
+  return { fixture, comparison }
 }
 
 async function main() {
@@ -181,7 +248,11 @@ async function main() {
     return 0
   }
 
-  const fixture = resolveFixture(args.fixture)
+  const fixtures = resolveFixtures(args.fixture)
+  for (const fixture of fixtures) {
+    if (!existsSync(fixture.path))
+      fail(`fixture not found: ${fixture.path}`)
+  }
 
   let configPath
   if (args.config) {
@@ -194,50 +265,24 @@ async function main() {
   const workDir = args.outDir
     ? resolve(process.cwd(), args.outDir)
     : mkdtempSync(join(tmpdir(), `md-verify-`))
-  const artifactDir = args.outDir ? workDir : join(workDir, fixture.name)
   process.stdout.write(`[verify] artifacts: ${workDir}\n`)
 
   try {
     buildEverything()
-
     const { captureOracle } = await import(`./verify/oracle.mjs`)
-    const oracleHtml = await captureOracle({
-      fixturePath: fixture.path,
-      outDir: artifactDir,
-    })
 
-    const cliOutPath = join(artifactDir, `cli.html`)
-    renderThroughCli(fixture.path, cliOutPath, configPath)
-    const cliHtml = readFileSync(cliOutPath, `utf8`)
+    const results = []
+    for (const fixture of fixtures)
+      results.push(await verifyFixture({ fixture, workDir, configPath, captureOracle }))
 
-    const comparison = compareOutputs(oracleHtml, cliHtml)
-    writeFileSync(join(artifactDir, `diff.txt`), comparison.unifiedDiff, `utf8`)
-    writeFileSync(
-      join(artifactDir, `report.txt`),
-      comparison.equal
-        ? `PASS: outputs are byte-identical (${Buffer.byteLength(oracleHtml, `utf8`)} bytes)\n`
-        : `FAIL: ${comparison.hunkCount} hunks across ${comparison.classes.length} class(es)\n${
-          comparison.classes.map(entry => `${entry.name}: ${entry.locations.length} hunks at lines ${entry.locations.join(`, `)}\n`).join(``)
-        }`,
-      `utf8`,
-    )
-
-    if (comparison.equal)
-      printPass(fixture.name, oracleHtml)
-    else
-      printFailure(fixture.name, oracleHtml, cliHtml, comparison)
-
-    process.stdout.write(`[verify] oracle: ${join(artifactDir, `oracle.html`)}\n`)
-    process.stdout.write(`[verify] cli:    ${cliOutPath}\n`)
-    process.stdout.write(`[verify] diff:   ${join(artifactDir, `diff.txt`)}\n`)
-    process.stdout.write(`[verify] report: ${join(artifactDir, `report.txt`)}\n`)
+    printSummary(results)
 
     if (keepArtifacts)
       process.stdout.write(`[verify] artifacts preserved: ${workDir}\n`)
     else
       process.stdout.write(`[verify] artifacts are temporary; pass --keep to preserve them\n`)
 
-    return comparison.equal ? 0 : 1
+    return results.every(result => result.comparison.equal) ? 0 : 1
   }
   finally {
     if (!keepArtifacts)

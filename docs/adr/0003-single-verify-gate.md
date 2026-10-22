@@ -15,7 +15,9 @@
 
 ### The gate deliberately landed red
 
-The two implementations genuinely differ today, so the first landing is red — roughly twenty hunks in six classes: an explicit body text colour on the CLI side, a table margin reset present only in the browser, an SVG `overflow` attribute set only by the browser, unitless versus pixel widths from the CSS inliner, link `href` normalisation performed by browser URL parsing, and a provenance comment only the old Oracle carried.
+The two implementations genuinely differ today, so the first landing is red. The residual differences measured with `class`/`id` set aside are six classes: an explicit body text colour on the CLI side, a table margin reset present only in the browser, an SVG `overflow` attribute set only by the browser, unitless versus pixel widths from the CSS inliner, link `href` normalisation performed by browser URL parsing, and a provenance comment only the old Oracle carried.
+
+A byte-exact comparison also reports the `class`/`id` difference itself: the browser's clipboard HTML keeps `class` and `id` attributes because WeChat strips them at paste time, while the CLI emits the post-paste form. That is a real product difference, not a measurement artefact, and it is one of the differences to be resolved after the gate produces output — either the CLI keeps the attributes or the comparison gains a machine-checked transform. The provenance comment, by contrast, is gone by construction: the Oracle capability returns the raw clipboard payload with nothing added.
 
 CI runs the gate as a non-blocking signal until those differences are worked through, so the diff is visible on every change without making every commit on `main` a red build. The publish and upstream-sync workflows run the same command and remain blocking: a red gate publishes nothing and holds the sync pull request. That is accepted for the scaffold period on purpose, not a malfunction — a red publish or sync job during this period means the gate is doing its job.
 
