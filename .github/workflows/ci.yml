@@ -78,3 +78,26 @@ jobs:
 
       - name: Run tests
         run: pnpm run test
+
+      # The verify gate's browser is downloaded once per Playwright version and
+      # restored from cache on every later run.
+      - name: Resolve Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      # TEMPORARY: non-blocking while the gate is red on purpose. The difference
+      # classes are visible in the log on every change. The transition to
+      # blocking is an explicit decision, recorded per
+      # docs/adr/0003-single-verify-gate.md ("The gate deliberately landed red").
+      - name: Verify rendering (non-blocking)
+        continue-on-error: true
+        run: pnpm wcli:verify
