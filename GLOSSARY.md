@@ -25,24 +25,12 @@ The normalized internal parameter set the renderer consumes, named after the ren
 _Avoid_: render flags, CLI options
 
 **Oracle**:
-Baseline HTML produced by rendering a fixture in a real browser.
-_Avoid_: reference output, baseline HTML
+The browser-rendered baseline produced at verification time: the clipboard HTML a real browser emits for a fixture through the application's own WeChat copy flow. Produced by a capability that writes only to a temporary directory and returns the HTML; never a committed artifact, never reused between runs.
+_Avoid_: reference output, baseline HTML, golden file
 
-**Tier 1**:
-A one-off semantic diff between an Oracle and CLI output, run once at implementation acceptance.
-_Avoid_: golden test, visual regression
-
-**Tier 2**:
-The recurring gate that asserts CLI output against a Golden snapshot on every candidate release.
-_Avoid_: snapshot test, CI check
-
-**Tier 3**:
-An on-demand rebuild that regenerates an Oracle for the current fork revision.
-_Avoid_: oracle refresh, recalibration
-
-**Golden snapshot**:
-The CLI output committed to the repo as the reference Tier 2 asserts against, once Tier 1 has confirmed it.
-_Avoid_: baseline, fixture output
+**verify**:
+The single gate: build the bundle, capture a fresh Oracle, render the same fixture through the CLI, and compare the two outputs byte for byte with zero tolerance. Exits non-zero on any difference.
+_Avoid_: snapshot gate, fidelity check
 
 **Pending placeholder**:
 A marker the renderer leaves where asynchronous hydration has not completed — diagram loading text, a formula placeholder, an unregistered-language marker. The CLI treats any occurrence as a hard failure.
