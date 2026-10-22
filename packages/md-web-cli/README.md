@@ -19,23 +19,14 @@ md-web-cli render <input.md> -o output.html
 md-web-cli --help
 ```
 
-## Development
+## Documentation
 
-```bash
-pnpm install
-pnpm --filter @dane.dai/md-web-cli build
-pnpm --filter @dane.dai/md-web-cli test
-```
+Full documentation lives in [`docs/`](./docs/README.md):
 
-## Verification gate
-
-```bash
-node scripts/oracle/verify-snapshot.mjs \
-  --fixture packages/md-web-cli/fixtures/full.md \
-  --snapshot packages/md-web-cli/golden/snapshot.html
-```
-
-Exit code 0 means the rendered output matches the golden snapshot.
+- [The `verify` gate](./docs/verify.md) — one command, byte-exact comparison
+- [Manual WeChat check](./docs/manual-wechat-check.md) — the one human step
+- [Known blind spots](./docs/blind-spots.md) — what a green result does not mean
+- [Fixtures](./fixtures/README.md) — the product signal and the infrastructure probe
 
 ## License
 
