@@ -22,6 +22,8 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { compareOutputs } from './verify/compare.mjs'
 import { assertConfigApplied, buildConfigSeedScript, ConfigError, projectDesignerConfig } from './verify/config.mjs'
+import { runSelfTest } from './verify/self-test.mjs'
+import { findStructuralProblems } from './verify/structural.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(HERE, `..`)
@@ -79,6 +81,9 @@ Options:
   --out-dir <dir>         Write artifacts here and keep them (implies --keep;
                           must be outside the repository)
   --keep                  Keep the artifacts and print their paths
+  --self-test             Reverse-case self-test: corrupt a known-good CLI
+                          render several ways and assert the gate rejects each
+                          mutant. Needs no browser
   -h, --help              Show this help
 `)
 }
@@ -111,6 +116,8 @@ export function parseArgs(argv) {
       args.outDir = arg.slice(`--out-dir=`.length)
     else if (arg === `--keep`)
       args.keep = true
+    else if (arg === `--self-test`)
+      args.selfTest = true
     else if (arg === `-h` || arg === `--help`)
       args.help = true
     else
@@ -168,6 +175,14 @@ function formatLocations(locations) {
   return `${shown.join(`, `)}${suffix}`
 }
 
+function printStructuralFailure(fixture, problems) {
+  process.stderr.write(
+    `[verify] STRUCTURAL FAIL ${fixture.name}: ${problems.length} WeChat-readiness problem(s) in the CLI output\n`,
+  )
+  for (const problem of problems)
+    process.stderr.write(`  ${problem.kind}: ${problem.detail}\n`)
+}
+
 function printFailure(fixture, oracleHtml, cliHtml, comparison) {
   process.stderr.write(
     `[verify] FAIL ${fixture.name} (${fixture.role}): outputs are not byte-identical `
@@ -196,14 +211,24 @@ function printPass(fixture, html) {
     process.stdout.write(`[verify] note: a green infrastructure probe proves nothing about product fidelity\n`)
 }
 
+function isPassing(result) {
+  return result.comparison.equal && result.structuralProblems.length === 0
+}
+
 function printSummary(results) {
-  const passed = results.filter(result => result.comparison.equal).length
+  const passed = results.filter(isPassing).length
   process.stdout.write(
     `[verify] summary: ${results.length} fixture(s) — ${passed} passed, ${results.length - passed} failed\n`,
   )
-  for (const { fixture, comparison } of results) {
-    const verdict = comparison.equal ? `PASS` : `FAIL`
-    const detail = comparison.equal ? `` : ` — ${comparison.hunkCount} hunks: ${fixture.failureMeaning}`
+  for (const result of results) {
+    const { fixture, comparison, structuralProblems } = result
+    const verdict = isPassing(result) ? `PASS` : `FAIL`
+    const details = []
+    if (!comparison.equal)
+      details.push(`${comparison.hunkCount} hunks: ${fixture.failureMeaning}`)
+    if (structuralProblems.length > 0)
+      details.push(`${structuralProblems.length} structural problem(s)`)
+    const detail = details.length > 0 ? ` — ${details.join(`; `)}` : ``
     process.stdout.write(`  ${verdict} ${fixture.name} (${fixture.role})${detail}\n`)
   }
 }
@@ -230,6 +255,7 @@ async function verifyFixture({ fixture, workDir, configPath, projectedConfig, ca
       : {}),
   })
 
+  const structuralProblems = findStructuralProblems(cliHtml)
   const comparison = compareOutputs(oracleHtml, cliHtml)
   writeFileSync(join(artifactDir, `diff.txt`), comparison.unifiedDiff, `utf8`)
   writeFileSync(
@@ -242,6 +268,9 @@ async function verifyFixture({ fixture, workDir, configPath, projectedConfig, ca
     `utf8`,
   )
 
+  if (structuralProblems.length > 0)
+    printStructuralFailure(fixture, structuralProblems)
+
   if (comparison.equal)
     printPass(fixture, oracleHtml)
   else
@@ -252,7 +281,50 @@ async function verifyFixture({ fixture, workDir, configPath, projectedConfig, ca
   process.stdout.write(`[verify] diff:   ${join(artifactDir, `diff.txt`)}\n`)
   process.stdout.write(`[verify] report: ${join(artifactDir, `report.txt`)}\n`)
 
-  return { fixture, comparison }
+  return { fixture, comparison, structuralProblems }
+}
+
+async function runSelfTestMode() {
+  const workDir = mkdtempSync(join(tmpdir(), `md-verify-self-test-`))
+  try {
+    process.stdout.write(`[self-test] building the CLI bundle (no browser involved)\n`)
+    run(`pnpm`, [`--filter`, `@dane.dai/md-web-cli`, `build`], { describe: `build failed` })
+    const knownGoodPath = join(workDir, `known-good.html`)
+    run(process.execPath, [CLI_BUNDLE, `render`, FIXTURES.full.path, `-o`, knownGoodPath], {
+      capture: true,
+      describe: `CLI render failed; the self-test needs a known-good render`,
+    })
+
+    const { baselineProblems, cases } = runSelfTest(readFileSync(knownGoodPath, `utf8`))
+    if (baselineProblems.length > 0) {
+      process.stderr.write(`[self-test] baseline render is not WeChat-ready; cannot self-test against it:\n`)
+      for (const problem of baselineProblems)
+        process.stderr.write(`  ${problem.kind}: ${problem.detail}\n`)
+      return 1
+    }
+
+    let ok = true
+    for (const testCase of cases) {
+      if (testCase.rejected) {
+        process.stdout.write(`[self-test] PASS: ${testCase.name} -> gate rejects it (${testCase.firstReason})\n`)
+        continue
+      }
+      ok = false
+      const missingKind = testCase.expectedKind && !testCase.expectedKindFound
+        ? ` (expected a "${testCase.expectedKind}" problem, saw: ${testCase.matchedKinds.join(`, `) || `none`})`
+        : ``
+      process.stderr.write(
+        `[self-test] FAIL: ${testCase.name} was NOT rejected${missingKind}; the gate cannot be trusted\n`,
+      )
+    }
+    process.stdout.write(
+      `[self-test] ${ok ? `PASS` : `FAIL`}: ${cases.length} reverse case(s), every mutant must be rejected\n`,
+    )
+    return ok ? 0 : 1
+  }
+  finally {
+    rmSync(workDir, { recursive: true, force: true })
+  }
 }
 
 async function main() {
@@ -261,6 +333,8 @@ async function main() {
     printUsage()
     return 0
   }
+  if (args.selfTest)
+    return runSelfTestMode()
 
   const fixtures = resolveFixtures(args.fixture)
   for (const fixture of fixtures) {
@@ -321,7 +395,7 @@ async function main() {
     else
       process.stdout.write(`[verify] artifacts are temporary; pass --keep to preserve them\n`)
 
-    return results.every(result => result.comparison.equal) ? 0 : 1
+    return results.every(isPassing) ? 0 : 1
   }
   finally {
     if (!keepArtifacts)
