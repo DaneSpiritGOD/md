@@ -15,12 +15,13 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { compareOutputs } from './verify/compare.mjs'
+import { assertConfigApplied, buildConfigSeedScript, ConfigError, projectDesignerConfig } from './verify/config.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(HERE, `..`)
@@ -207,14 +208,27 @@ function printSummary(results) {
   }
 }
 
-async function verifyFixture({ fixture, workDir, configPath, captureOracle }) {
+async function verifyFixture({ fixture, workDir, configPath, projectedConfig, captureOracle }) {
   const artifactDir = join(workDir, fixture.name)
+  mkdirSync(artifactDir, { recursive: true })
   process.stdout.write(`[verify] fixture: ${fixture.name} — ${fixture.role}\n`)
 
-  const oracleHtml = await captureOracle({ fixturePath: fixture.path, outDir: artifactDir })
+  // Render through the CLI first: a config or fixture the CLI rejects fails in
+  // under a second instead of after the browser capture.
   const cliOutPath = join(artifactDir, `cli.html`)
   renderThroughCli(fixture.path, cliOutPath, configPath)
   const cliHtml = readFileSync(cliOutPath, `utf8`)
+
+  const oracleHtml = await captureOracle({
+    fixturePath: fixture.path,
+    outDir: artifactDir,
+    ...(projectedConfig
+      ? {
+          initScripts: [buildConfigSeedScript(projectedConfig)],
+          afterLoad: page => assertConfigApplied(page, projectedConfig),
+        }
+      : {}),
+  })
 
   const comparison = compareOutputs(oracleHtml, cliHtml)
   writeFileSync(join(artifactDir, `diff.txt`), comparison.unifiedDiff, `utf8`)
@@ -254,26 +268,51 @@ async function main() {
       fail(`fixture not found: ${fixture.path}`)
   }
 
-  let configPath
+  let requestedConfig
   if (args.config) {
-    configPath = resolve(process.cwd(), args.config)
-    if (!existsSync(configPath))
-      fail(`config not found: ${configPath}`)
+    const sourcePath = resolve(process.cwd(), args.config)
+    if (!existsSync(sourcePath))
+      fail(`config not found: ${sourcePath}`)
+    try {
+      requestedConfig = JSON.parse(readFileSync(sourcePath, `utf8`))
+    }
+    catch (error) {
+      fail(`config is not valid JSON: ${error.message}`)
+    }
   }
 
   const keepArtifacts = Boolean(args.outDir || args.keep)
   const workDir = args.outDir
     ? resolve(process.cwd(), args.outDir)
     : mkdtempSync(join(tmpdir(), `md-verify-`))
+  mkdirSync(workDir, { recursive: true })
   process.stdout.write(`[verify] artifacts: ${workDir}\n`)
 
   try {
+    let configPath
+    let projectedConfig
+    if (requestedConfig) {
+      const { projected, dropped } = projectDesignerConfig(requestedConfig)
+      projectedConfig = projected
+      const keptCount = Object.keys(projected).length
+      const droppedCount = dropped.content.length + dropped.ui.length + dropped.unknown.length
+      process.stdout.write(
+        `[verify] config: ${keptCount} render-affecting key(s) kept, ${droppedCount} dropped `
+        + `(${dropped.content.length} article-content, ${dropped.ui.length} UI, ${dropped.unknown.length} unknown)\n`,
+      )
+      if (dropped.unknown.length > 0)
+        process.stdout.write(`[verify] config: unknown keys ignored: ${dropped.unknown.join(`, `)}\n`)
+      configPath = join(workDir, `projected-config.json`)
+      writeFileSync(configPath, JSON.stringify(projected, null, 2), `utf8`)
+      process.stdout.write(`[verify] config: the same projected file goes to both sides (${configPath})\n`)
+    }
+
     buildEverything()
     const { captureOracle } = await import(`./verify/oracle.mjs`)
 
     const results = []
     for (const fixture of fixtures)
-      results.push(await verifyFixture({ fixture, workDir, configPath, captureOracle }))
+      results.push(await verifyFixture({ fixture, workDir, configPath, projectedConfig, captureOracle }))
 
     printSummary(results)
 
@@ -295,7 +334,7 @@ main()
     process.exitCode = exitCode
   })
   .catch((error) => {
-    if (error instanceof VerifyError) {
+    if (error instanceof VerifyError || error instanceof ConfigError) {
       process.stderr.write(`[verify] ${error.message}\n`)
     }
     else {
