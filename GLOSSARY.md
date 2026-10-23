@@ -1,6 +1,6 @@
 # doocs/md
 
-A WeChat Markdown editor that renders Markdown into article HTML for the WeChat official account editor. This glossary covers the vocabulary of the fork-local headless rendering work.
+A WeChat Markdown editor that renders Markdown into article HTML for the WeChat official account editor. This glossary covers the vocabulary of the fork's headless rendering work.
 
 ## Language
 
@@ -36,6 +36,6 @@ _Avoid_: snapshot gate, fidelity check
 A marker the renderer leaves where asynchronous hydration has not completed — diagram loading text, a formula placeholder, an unregistered-language marker. The CLI treats any occurrence as a hard failure.
 _Avoid_: loading state, stub, TODO marker
 
-**Fork-local change**:
-A change that exists only in this fork and is never offered upstream.
-_Avoid_: local patch, downstream change
+**Fork-local package**:
+A package that exists only in this fork, such as `@dane.dai/md-web-cli` and its release workflows and fixtures. It is ordinary repository content: changes land through pull requests like everything else.
+_Avoid_: fork patch, downstream package
