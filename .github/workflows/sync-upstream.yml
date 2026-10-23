@@ -16,6 +16,13 @@ name: Sync upstream doocs/md
 # the default token do not trigger workflows. The verification that already
 # passed here, recorded in the PR body, is what the human merges on.
 #
+# The sync PR is merged with a **squash** (the only merge method main allows
+# per docs/adr/0004-pr-first-landing.md). Squashing collapses the upstream
+# commit range, so upstream/main's commits stop being ancestors of main and
+# the next sync re-applies them from the last common ancestor before fork
+# divergence; this is a known, accepted trade-off for now. Landing as a merge
+# commit to preserve ancestry is tracked separately in issue #34.
+#
 # Failure modes (all surface as job failure → GitHub's built-in Actions
 # notification; no PR is opened, nothing is pushed):
 #   1. Merge conflict   — "Merge upstream main" step fails.
@@ -130,6 +137,14 @@ jobs:
         if: steps.upstream.outputs.new == 'true'
         run: pnpm exec playwright install --with-deps chromium
 
+      # Unit tests run before the verify gate so a red gate (a known state per
+      # docs/adr/0003-single-verify-gate.md) never hides a CLI test regression —
+      # a test failure is cheap and reports even when byte-exact verification
+      # is not yet green.
+      - name: Run package unit tests
+        if: steps.upstream.outputs.new == 'true'
+        run: pnpm --filter @dane.dai/md-web-cli test
+
       - name: Verify rendering (wcli:verify)
         id: verify
         # Failure here = failure mode 2 or 3: the build inside the gate or the
@@ -149,10 +164,6 @@ jobs:
             exit "$STATUS"
           fi
           echo "result=PASSED" >> "$GITHUB_OUTPUT"
-
-      - name: Run package unit tests
-        if: steps.upstream.outputs.new == 'true'
-        run: pnpm --filter @dane.dai/md-web-cli test
 
       - name: Push sync branch
         # force-with-lease: a second dispatch while the PR is open re-creates

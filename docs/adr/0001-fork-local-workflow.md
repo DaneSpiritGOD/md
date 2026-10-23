@@ -1,5 +1,8 @@
 # Fork-local development workflow
 
+> **Status: superseded by [0004-pr-first-landing.md](./0004-pr-first-landing.md).**
+> Every change now lands on `main` through a pull request; there is no direct-push lane.
+
 This fork carries changes that are deliberately never offered to `doocs/md` upstream: a headless rendering CLI, its two release workflows, and its fixtures. We therefore develop fork-local: our own commits go straight to `main` with no pull request and no review cycle, while upstream arrives through a sync pull request — created by the sync workflow, verified there before it is opened, and merged by a human after reviewing the diff. Upstream is merged into ours rather than rebased.
 
 ## Consequences

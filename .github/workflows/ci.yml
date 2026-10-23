@@ -109,3 +109,32 @@ jobs:
       - name: Verify rendering (non-blocking)
         continue-on-error: true
         run: pnpm wcli:verify
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up pnpm
+        uses: pnpm/setup@v3
+        with:
+          version: 12.14.0
+          runtime: node@22
+          cache: true
+          install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Build the shipped artifacts so a broken bundle is caught on a PR, not
+      # after it lands. `pnpm web build` runs vite build + type-check (the same
+      # command deploy uses); the CLI build is the fork's published bundle.
+      - name: Build web app
+        run: pnpm web build
+
+      - name: Build md-web-cli
+        run: pnpm --filter @dane.dai/md-web-cli build
