@@ -13,8 +13,9 @@ been resolved, and before a release that matters.
 pnpm wcli:verify --fixture full --keep
 ```
 
-The gate prints where it wrote its artifacts. A red result is expected while
-differences remain — the artifacts are produced either way. Note the printed
+The gate prints where it wrote its artifacts. The gate is green for the default
+fixtures, so the artifacts are byte-identical; the point of pasting both is to
+confirm how the real WeChat editor renders that identical HTML. Note the printed
 directory:
 
 ```

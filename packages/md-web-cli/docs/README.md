@@ -25,9 +25,10 @@ md-web-cli render <input.md> -o output.html
 md-web-cli --help
 ```
 
-`render` writes WeChat-ready HTML: inline styles, no `<style>` block, no class
-attributes. Pending async content (diagrams, formulas, unregistered code
-languages) is a hard failure rather than silent residue.
+`render` writes WeChat-ready HTML: inline styles, no `<style>` block, and class
+attributes preserved to match the browser clipboard byte for byte (WeChat strips
+them at paste time). Pending async content (diagrams, formulas, unregistered
+code languages) is a hard failure rather than silent residue.
 
 Configuration comes from the Designer export JSON that `md.doocs.org` produces:
 

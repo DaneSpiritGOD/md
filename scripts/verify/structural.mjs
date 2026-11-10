@@ -3,13 +3,14 @@
  *
  * These are the invariants the retired verifier enforced, kept alive so they do
  * not die with the script that used to host them: the CLI's output must carry no
- * pending async placeholders, and it must be WeChat-ready (no style block, no
- * class attributes, inline styles on block-level elements).
+ * pending async placeholders, and it must be WeChat-ready (no style block,
+ * inline styles on block-level elements).
  *
  * They run against the CLI output only. The browser's clipboard HTML is
  * pre-paste and legitimately keeps class attributes; WeChat strips them at paste
- * time. Asserting WeChat readiness on that side would be asserting the wrong
- * artefact's contract.
+ * time. The CLI now keeps the same class attributes to stay byte-identical with
+ * the browser, so class preservation is owned by the byte comparison, not by a
+ * structural assertion here.
  */
 
 /** Elements WeChat formats structurally; they legitimately carry no style attr. */
@@ -71,10 +72,6 @@ export function findInlineStyleProblems(html) {
   const problems = []
   if (/<style[\s>]/i.test(html))
     problems.push({ kind: `style-tag`, detail: `document contains a <style> block` })
-
-  const classCount = (html.match(/\sclass\s*=\s*(["'])/gi) ?? []).length
-  if (classCount > 0)
-    problems.push({ kind: `class-attribute`, detail: `document contains ${classCount} class attribute(s)` })
 
   for (const match of html.matchAll(/<([a-z][\w-]*)\b([^>]*)>/gi)) {
     const tag = match[1].toLowerCase()

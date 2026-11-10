@@ -53,7 +53,6 @@ export interface FlagOverrides {
   blockSpacing?: string
   linkColor?: string
   blockquoteBackground?: string
-  bodyColor?: string
   legend?: LegendValue
   codeBlockTheme?: string
   themeMode?: RenderConfigInput['themeMode']

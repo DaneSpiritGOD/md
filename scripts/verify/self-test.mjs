@@ -33,7 +33,11 @@ const CASES = [
   },
   {
     name: `injected class attribute`,
-    expectKind: `class-attribute`,
+    // Class attributes are legitimately present (kept for byte-parity with the
+    // browser), so the structural check no longer flags them; the byte
+    // comparison rejects a mutant that adds one where the known-good render
+    // had none.
+    expectKind: null,
     mutate: html => html.replace(/<p\b/, `<p class="leaked"`),
   },
   {

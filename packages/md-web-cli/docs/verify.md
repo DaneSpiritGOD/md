@@ -91,9 +91,13 @@ Independent of the byte comparison, the gate fails when the CLI output carries:
 - a pending async placeholder — diagram (`data-md-diagram-state="loading"`),
   formula (`.katex-pending`), or unregistered code language
   (`data-language-pending`);
-- a `<style>` block, a `class` attribute, or a block-level element without an
-  inline style (`tr`/`tbody`/`thead`/`svg` are exempt: WeChat formats them
-  structurally).
+- a `<style>` block, or a block-level element without an inline style
+  (`tr`/`tbody`/`thead`/`svg` are exempt: WeChat formats them structurally).
+
+Class attributes are **not** asserted structurally any more. The CLI keeps them
+to stay byte-identical with the browser's clipboard output (WeChat strips them
+at paste), so class preservation is owned by the byte comparison, not by this
+assertion. See [blind-spots.md](./blind-spots.md).
 
 ## Self-test
 
@@ -102,8 +106,9 @@ pnpm wcli:verify --self-test
 ```
 
 Corrupts a known-good CLI render seven distinct ways — injected diagram,
-formula, and language placeholders, stripped inline styles, a leaked class
-attribute, an injected style block, and truncation — and asserts each mutant is
+formula, and language placeholders, stripped inline styles, an injected class
+attribute (rejected by the byte comparison, since classes are now legitimately
+present), an injected style block, and truncation — and asserts each mutant is
 rejected. It launches no browser and builds only the CLI bundle, so it doubles
 as the fast suite's proof that the gate can fail.
 
@@ -141,13 +146,15 @@ Detection uses `CI` plus the usual vendor markers, never terminal state; see
 ## Status in CI
 
 - **CI** runs the gate on every push and pull request as a **non-blocking**
-  signal, with the browser cached on the Playwright version. A red gate is
-  visible in the log and does not fail the job; an infrastructure failure around
-  it (the browser download, for instance) still fails CI.
+  signal, with the browser cached on the Playwright version. The gate is
+  **green** for the two default fixtures; an infrastructure failure around it
+  (the browser download, for instance) still fails CI.
 - **Publish** and **upstream sync** run the same command and are **blocking**: a
   red gate publishes nothing and holds the sync pull request.
 
-The gate landed **red on purpose** — the two implementations differ today. The
-transition from non-blocking to blocking is an explicit decision, recorded when
-it happens. Do not restore a tolerance to make it green; work the differences
-off one class at a time. See [ADR-0003](../../../docs/adr/0003-single-verify-gate.md).
+The CLI and the browser's WeChat copy flow are now byte-identical for the
+default fixtures, so the gate reports green. The remaining transition — making
+`verify` a required (blocking) status check on every push and pull request — is
+tracked as [issue #33](https://github.com/DaneSpiritGOD/md/issues/33). Do not
+restore a tolerance to widen green; the byte-exact bar stays. See
+[ADR-0003](../../../docs/adr/0003-single-verify-gate.md).

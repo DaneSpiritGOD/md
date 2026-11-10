@@ -7,10 +7,9 @@ import { expect, it } from 'vitest'
  * Behavioural guard for WeChat-ready output produced through the real CLI path.
  *
  * The verify gate asserts these invariants on its own output, but it only sees
- * what the built bundle produces. A regression that drops juice or class
- * stripping inside the renderer would be caught there — late, and only if the
- * gate runs. This file pins the same behaviour at the source so the fast suite
- * fails first.
+ * what the built bundle produces. A regression that drops juice inside the
+ * renderer would be caught there — late, and only if the gate runs. This file
+ * pins the same behaviour at the source so the fast suite fails first.
  */
 import { renderMarkdownToWeChatHtml } from '../src/wechat'
 
@@ -19,17 +18,20 @@ const fixturePath = path.resolve(fixture.pathname)
 const repoRoot = path.resolve(fixturePath, '../../../..')
 
 const BLOCK_TAGS = 'section|p|div|h[1-6]|ul|ol|li|table|thead|tbody|tr|th|td|blockquote|pre|hr|img'
+/** Elements WeChat formats structurally and legitimately carry no style attr. */
+const STYLE_EXEMPT = new Set([`tr`, `tbody`, `thead`, `svg`])
 
-it('fixture render is WeChat-ready: no <style>, no class attributes, inline styles everywhere', async () => {
+it('fixture render is WeChat-ready: no <style>, class attributes preserved, inline styles everywhere', async () => {
   const { readFileSync } = await import('node:fs')
   const { html } = renderMarkdownToWeChatHtml(readFileSync(fixturePath, 'utf-8'))
   expect(html).not.toMatch(/<style/)
-  expect(html).not.toMatch(/\sclass\s*=/i)
+  // Classes are kept for byte-parity with the browser clipboard output.
+  expect(html).toMatch(/\sclass\s*=/i)
   const missing = []
   for (const match of html.matchAll(new RegExp(`<(${BLOCK_TAGS})\\b([^>]*)>`, 'gi'))) {
     const attrs = match[2]
     // Structural wrappers legitimately carry no style (table sections, rows).
-    if (!/\sstyle\s*=/i.test(attrs) && attrs.trim() !== '')
+    if (!/\sstyle\s*=/i.test(attrs) && attrs.trim() !== '' && !STYLE_EXEMPT.has(match[1]))
       missing.push(`<${match[1]}${attrs}>`)
   }
   expect(missing).toEqual([])

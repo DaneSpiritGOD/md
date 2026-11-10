@@ -33,6 +33,6 @@ Check where it stopped:
   missing build: the harness is broken. This is the strong signal the probe
   exists to give.
 - **At the comparison** — a byte difference: the probe is reporting the same
-  product difference `full.md` reports. The CLI strips `class`/`id` attributes
-  and the browser's clipboard HTML keeps them, so this difference is present at
-  every scale and is not by itself evidence that the harness broke.
+  product difference `full.md` reports. The CLI and the browser keep
+  `class`/`id` attributes identically, so a byte difference here is a real
+  fidelity difference, not a class-stripping artefact.

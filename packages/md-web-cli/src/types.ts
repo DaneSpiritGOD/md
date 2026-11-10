@@ -28,6 +28,4 @@ export interface RenderConfigInput {
   headingStyles?: HeadingStyles
   /** Active CSS editor tab's custom CSS (Designer dialect), merged after theme CSS. */
   customCss?: string
-  /** Body text color, default rgb(10,10,10); applied the way the copy flow does. */
-  bodyColor?: string
 }

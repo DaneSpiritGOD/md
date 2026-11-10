@@ -194,18 +194,16 @@ describe('flag overrides beat config values', () => {
     expect(config.theme).toBe(`grace`)
   })
 
-  it('--body-color changes the body text color over config and default', () => {
+  it('does not apply an explicit body text color (inherited like the site)', () => {
     const markdown = `# Title\n\nParagraph.\n`
-    const defaultRender = renderMarkdownToWeChatHtml(markdown)
-    expect(defaultRender.html).toContain(`rgb(10,10,10)`)
+    const render = renderMarkdownToWeChatHtml(markdown)
+    // The site inherits body color from the article body; the root section must
+    // not carry an explicit `color` (matching apps/web clipboard output).
+    expect(render.html).not.toContain(`color: rgb(10,10,10)`)
 
-    const config = normalizeMcpConfig({ primaryColor: `#009874` })
-    const overridden = renderMarkdownToWeChatHtml(markdown, applyFlagOverrides(config, { bodyColor: `#123456` }))
-    expect(overridden.html).toContain(`color: #123456`)
-    expect(overridden.html).not.toContain(`rgb(10,10,10)`)
-
-    const styled = renderMarkdownToStyledHtml(markdown, applyFlagOverrides(config, { bodyColor: `#ABCDEF` }))
-    expect(styled.html).toContain(`color: #ABCDEF`)
+    const styled = renderMarkdownToStyledHtml(markdown, {})
+    const sectionMatch = styled.html.match(/<section[^>]*style="[^"]*"/)?.[0] ?? ``
+    expect(sectionMatch).not.toContain(`color:`)
   })
 })
 

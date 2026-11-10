@@ -102,12 +102,10 @@ jobs:
           MD_WEB_CLI_BROWSER_TESTS: '1'
         run: pnpm --filter @dane.dai/md-web-cli exec vitest run tests/verify-config.test.ts
 
-      # TEMPORARY: non-blocking while the gate is red on purpose. The difference
-      # classes are visible in the log on every change. The transition to
-      # blocking is an explicit decision, recorded per
-      # docs/adr/0003-single-verify-gate.md ("The gate deliberately landed red").
-      - name: Verify rendering (non-blocking)
-        continue-on-error: true
+      # The verify gate is green for the default fixtures and now blocking:
+      # a difference on any change fails the job. The transition to blocking is
+      # recorded in docs/adr/0003-single-verify-gate.md.
+      - name: Verify rendering
         run: pnpm wcli:verify
 
   build:

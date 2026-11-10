@@ -7,8 +7,7 @@ name: Publish md-web-cli
 # email (account-level: Email + only failed workflows) — no notification
 # secrets or steps here.
 #
-# While the gate is deliberately red (see docs/adr/0003-single-verify-gate.md),
-# this workflow stays blocking on purpose: a red gate publishes nothing.
+# The gate is green for the default fixtures; a red run publishes nothing.
 #
 # DANE: before the first successful publish, configure the npmjs trusted
 # publisher for @dane.dai/md-web-cli (npmjs.com → package/Automation settings):
