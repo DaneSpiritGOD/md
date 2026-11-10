@@ -44,7 +44,6 @@ Options:
   --block-spacing <n>       Block spacing multiplier (e.g. 1)
   --link-color <color>      Link color
   --blockquote-background <value>  Blockquote background
-  --body-color <color>      Body text color (default rgb(10,10,10))
   --legend <mode>           Image caption format
   --code-theme <name>       Code highlight theme (preset name or MCP URL)
   --theme-mode <mode>       light | dark
@@ -102,12 +101,6 @@ function parseArgs(argv: string[]): ParsedArgs {
     }
     else if (arg.startsWith(`--css-tab=`)) {
       parsed.cssTab = arg.slice(`--css-tab=`.length)
-    }
-    else if (arg === `--body-color`) {
-      flags.bodyColor = argv[++i]
-    }
-    else if (arg.startsWith(`--body-color=`)) {
-      flags.bodyColor = arg.slice(`--body-color=`.length)
     }
     else if (arg === `--theme` || arg.startsWith(`--theme=`)) {
       const value = arg === `--theme` ? argv[++i] : arg.slice(`--theme=`.length)

@@ -8,10 +8,15 @@ does not cover.
 ## No diagram SVG pipeline in the CLI
 
 The browser runs a real SVG pipeline for Mermaid, PlantUML, and infographic
-diagrams (WeChat-specific SVG sanitising, label promotion, size attributes).
-The CLI has none: `@md/core` is bundled without the diagram extensions, so
-diagram input fails hard with "cannot be rendered offline" instead of producing
-slightly different SVG.
+diagrams (WeChat-specific SVG sanitising, label promotion, marker expansion, and
+size attributes). The CLI ports the **generic** SVG path — `overflow="visible"`,
+unitless `width`/`height`, and stripped `id`/`class`/`defs` — which is what the
+fixtures' mac code-block title-bar SVGs need.
+
+Diagram-specific sanitisation (foreignObject label flattening, marker expansion,
+paint baking, viewBox tightening) is **not** ported: `@md/core` is bundled
+without the diagram extensions, so diagram input fails hard with "cannot be
+rendered offline" instead of producing slightly different SVG.
 
 The absence is therefore **latent**: no fixture can reach it, and a green gate
 says nothing about diagrams. Tracked in
@@ -26,29 +31,27 @@ some styles, and re-flows images. Nothing in this repository pastes output into
 WeChat. That step is human and remains so —
 see [manual-wechat-check.md](./manual-wechat-check.md).
 
-## The gate is red today, by design
+## The gate is green for the default fixtures
 
-The two implementations differ, and the gate reports those differences rather
-than hiding them. Known classes, in the order they dominate the output:
+The CLI and the browser's WeChat copy flow are byte-identical for `full.md` and
+`minimal.md`. The difference classes that used to dominate — `class`/`id`
+attributes, explicit body text colour, table `margin-top`, SVG `overflow` and
+unitless widths, and link `href` normalisation — are all resolved by aligning
+the CLI to the browser's clipboard semantics:
 
-- **`class` and `id` attributes.** The browser's clipboard HTML keeps them
-  (WeChat strips them at paste time); the CLI emits the post-paste form. This is
-  a product difference to be resolved — either the CLI keeps the attributes or
-  the comparison gains a machine-checked transform — not a measurement artefact.
-- **Body text colour.** The CLI sets an explicit `color: rgb(10,10,10)` on the
-  root section; the browser inherits it from the preview panel. Needs a product
-  decision, not a whitelist.
-- **Table margin reset.** The browser emits `margin-top: 0 !important` on tables.
-- **SVG `overflow` attribute.** The browser sets `overflow="visible"`; the CLI
-  omits it. No visual consequence, which is why it is deferred rather than
-  guessed at.
-- **Unitless versus pixel widths.** The CSS inliner gives the CLI `width="45px"`
-  where the browser has `width="45"`.
-- **Link `href` normalisation.** The browser's URL parsing adds a trailing
-  slash; the CLI keeps the authored URL.
+- **`class` and `id` attributes.** The CLI now keeps them, exactly like the
+  browser (WeChat strips them at paste time), so the two outputs match.
+- **Body text colour.** The CLI no longer sets an explicit `color` on the root
+  section; like the browser it inherits from the article body.
+- **Table margin reset.** The `#output section > :first-child` rule is
+  unscoped before inlining, so the browser's `margin-top: 0 !important` appears.
+- **SVG handling.** The CLI now sets `overflow="visible"` and unitless
+  `width`/`height` on every SVG, matching the browser's generic sanitise path.
 
-See [ADR-0003](../../../docs/adr/0003-single-verify-gate.md) for why none of
-these may be papered over with a tolerance or an allow-list.
+A green `full` run is a strong statement about the two implementations agreeing
+on the fixture surfaces. It remains a weak one about diagrams and about the real
+WeChat editor — see the sections below. Do not paper over a future difference
+with a tolerance; work it off the same way.
 
 ## Code-block themes outside the vendored ten
 

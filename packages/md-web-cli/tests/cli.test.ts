@@ -51,9 +51,10 @@ describe('cli subprocess: render', () => {
     const html = fs.readFileSync(out, 'utf-8')
     // Ticket 04: no <style> block — everything is inlined into style attributes.
     expect((html.match(/<style/g) ?? []).length).toBe(0)
-    expect(html).not.toMatch(/\sclass\s*=/i)
+    // Classes are kept for byte-parity with the browser clipboard output.
+    expect(html).toMatch(/\sclass\s*=/i)
     expect(html).toContain('font-family')
-    // Mac code-block title bar survives class stripping as an inlined span.
+    // Mac code-block title bar is retained (classes are no longer stripped).
     expect(html).toContain('padding: 10px 14px 0')
   }, 30_000)
 
@@ -95,7 +96,7 @@ describe('cli subprocess: WeChat output + pending placeholders (ticket 04)', () 
     expect(fs.existsSync(out)).toBe(true)
     const html = fs.readFileSync(out, 'utf-8')
     expect((html.match(/<style/g) ?? []).length).toBe(0)
-    expect(html.match(/\sclass\s*=/i)).toBeNull()
+    expect(html).toMatch(/\sclass\s*=/i)
     expect(html).not.toMatch(/data-md-diagram-state="loading"/)
     expect(html).not.toMatch(/data-language-pending/)
     expect(html).not.toMatch(/Loading Mermaid|Loading infographic|Loading PlantUML/)

@@ -40,12 +40,11 @@ describe(`weChat-ready inline style checks`, () => {
     expect(findInlineStyleProblems('<section style="color: red"><p style="margin: 0">x</p></section>')).toHaveLength(0)
   })
 
-  it(`rejects class attributes, style blocks and unstyled block elements`, () => {
+  it(`rejects style blocks and unstyled block elements (class attributes are kept)`, () => {
     const problems = findInlineStyleProblems('<style>a{}</style><div class="x" style="a"><p>b</p></div>')
 
     expect(problems.map(problem => problem.kind)).toEqual([
       `style-tag`,
-      `class-attribute`,
       `unstyled-block`,
     ])
   })
@@ -59,7 +58,7 @@ describe(`weChat-ready inline style checks`, () => {
   it(`reports every problem class for one artifact`, () => {
     const problems = findStructuralProblems('<p class="x">no style</p><div style="x" data-md-diagram-state="loading"></div>')
 
-    expect(problems.map(problem => problem.kind).sort()).toEqual([`class-attribute`, `pending-diagram`, `unstyled-block`])
+    expect(problems.map(problem => problem.kind).sort()).toEqual([`pending-diagram`, `unstyled-block`])
   })
 })
 

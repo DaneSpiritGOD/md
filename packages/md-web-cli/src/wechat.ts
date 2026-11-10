@@ -250,9 +250,139 @@ function resolveCssLiterals(html: string, values: WeChatVariableValues): string 
     )
 }
 
-/** WeChat-ready HTML must carry no class attributes and no <style> block. */
-function stripClassAttributes(html: string): string {
-  return html.replace(/\sclass\s*=\s*(["'])[\s\S]*?\1/gi, ``)
+/**
+ * Normalize absolute `http(s)` anchor hrefs to the browser's resolved form so
+ * the CLI matches the Web clipboard output byte for byte. A bare-origin URL
+ * such as `https://example.com` resolves (via the WHATWG URL, which Chrome's
+ * `a.href` property uses) to `https://example.com/`; a URL with a path stays
+ * unchanged. Relative and non-http(s) hrefs are left as authored.
+ */
+function normalizeAnchorHrefs(html: string): string {
+  return html.replace(/<a\b([^>]+?)href="([^"]*)"/gi, (full, attrs: string, href: string) => {
+    if (!/^https?:\/\//i.test(href))
+      return full
+    try {
+      const resolved = new URL(href).href
+      return resolved === href ? full : `<a${attrs}href="${resolved}"`
+    }
+    catch {
+      return full
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Vendored from apps/web/src/services/export/wechat-svg.ts (generic SVG subset)
+// ---------------------------------------------------------------------------
+
+const WECHAT_MAX_WIDTH_PX = 677
+
+function parseViewBox(viewBox: string | null): { x: number, y: number, width: number, height: number } | null {
+  if (!viewBox)
+    return null
+  const parts = viewBox.trim().split(/[\s,]+/).map(Number)
+  if (parts.length !== 4 || parts.some(n => !Number.isFinite(n)))
+    return null
+  return { x: parts[0], y: parts[1], width: parts[2], height: parts[3] }
+}
+
+/** Parse a pixel dimension attribute (`45px` -> 45). `%` and non-finite values return null. */
+function parsePixelAttribute(value: string | null): number | null {
+  if (!value || value.endsWith(`%`))
+    return null
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+/**
+ * Resolve an SVG's pixel size the way the browser copy flow does
+ * (apps/web resolveSvgPixelSize). The CLI has no layout, so `getBoundingClientRect`
+ * is always a zero rect — for the fixture SVGs (mac-sign, which carry explicit
+ * `width`/`height`) that resolves to those authored values, keeping the output
+ * deterministic and byte-identical to the browser.
+ */
+function resolveSvgPixelSize(svg: Element): { width: number, height: number } {
+  const viewBox = parseViewBox(svg.getAttribute(`viewBox`))
+  const attrWidth = parsePixelAttribute(svg.getAttribute(`width`))
+  const attrHeight = parsePixelAttribute(svg.getAttribute(`height`))
+
+  let width = attrWidth ?? viewBox?.width ?? WECHAT_MAX_WIDTH_PX
+  let height = attrHeight ?? viewBox?.height ?? width * 0.75
+
+  if (viewBox && viewBox.width > 0 && viewBox.height > 0) {
+    const aspect = viewBox.height / viewBox.width
+    if (!attrWidth) {
+      width = viewBox.width
+      height = viewBox.height
+    }
+    else if (Math.abs((height / width) - aspect) > 0.01) {
+      height = width * aspect
+    }
+  }
+
+  if (width > WECHAT_MAX_WIDTH_PX) {
+    height = height * (WECHAT_MAX_WIDTH_PX / width)
+    width = WECHAT_MAX_WIDTH_PX
+  }
+
+  return {
+    width: Math.max(1, Math.round(width)),
+    height: Math.max(1, Math.round(height)),
+  }
+}
+
+/** Bake unitless width/height so WeChat does not re-scale the SVG. */
+function fixSvgDimensions(svg: Element) {
+  const { width, height } = resolveSvgPixelSize(svg)
+  if (!svg.hasAttribute(`xmlns`))
+    svg.setAttribute(`xmlns`, `http://www.w3.org/2000/svg`)
+  svg.setAttribute(`width`, String(width))
+  svg.setAttribute(`height`, String(height))
+}
+
+/** WeChat strips defs/id/class/clip-path; drop them so paints/ids survive paste. */
+function stripUnsupportedAttributes(svg: Element) {
+  svg.querySelectorAll(`[clip-path], [clipPath]`).forEach((el) => {
+    el.removeAttribute(`clip-path`)
+    el.removeAttribute(`clipPath`)
+  })
+  svg.querySelectorAll(`style`).forEach(styleEl => styleEl.remove())
+  svg.querySelectorAll(`defs`).forEach(defsEl => defsEl.remove())
+  svg.querySelectorAll(`linearGradient, radialGradient, filter, clipPath, mask, pattern, symbol`).forEach(el => el.remove())
+
+  svg.querySelectorAll(`*`).forEach((el) => {
+    el.removeAttribute(`id`)
+    el.removeAttribute(`class`)
+  })
+  svg.removeAttribute(`id`)
+  svg.removeAttribute(`class`)
+}
+
+/**
+ * Adapt every `<svg>` for WeChat, mirroring apps/web sanitizeSvgsForWeChat's
+ * generic (non-diagram) path: overflow visible, explicit unitless dimensions,
+ * and stripped id/class/defs. Diagram (mermaid/plantuml) sanitization is out of
+ * scope — the CLI cannot render diagram extensions (they hard-fail as pending
+ * placeholders), so no fixture can reach it.
+ */
+function sanitizeSvgsForWeChat(html: string): string {
+  const root = new JSDOM(html).window.document.body
+  const svgs = root.querySelectorAll(`svg`)
+  if (svgs.length === 0)
+    return html
+
+  svgs.forEach((svg) => {
+    svg.setAttribute(`overflow`, `visible`)
+    svg.querySelectorAll(`[style]`).forEach((el) => {
+      const style = el.getAttribute(`style`)
+      if (style && /overflow\s*:\s*hidden/i.test(style))
+        el.setAttribute(`style`, style.replace(/overflow\s*:\s*hidden/gi, `overflow: visible`))
+    })
+    fixSvgDimensions(svg)
+    stripUnsupportedAttributes(svg)
+  })
+
+  return root.innerHTML
 }
 
 // ---------------------------------------------------------------------------
@@ -321,11 +451,12 @@ export interface WeChatRenderResult {
 }
 
 /**
- * Render Markdown to WeChat-ready HTML: inline styles everywhere, no class
- * attributes, no <style> block, WeChat post-processing applied.
- * Throws if the render produces pending placeholders (mermaid, KaTeX,
- * infographic, unregistered code languages) — they must never be silently
- * stripped.
+ * Render Markdown to WeChat-ready HTML: inline styles everywhere, no <style>
+ * block, WeChat post-processing applied. Class attributes are preserved — the
+ * Web clipboard keeps them (WeChat strips them at paste) — so the CLI matches
+ * the browser byte for byte. Throws if the render produces pending placeholders
+ * (mermaid, KaTeX, infographic, unregistered code languages) — they must never
+ * be silently stripped.
  */
 export function renderMarkdownToWeChatHtml(markdown: string, config: RenderConfigInput = {}): WeChatRenderResult {
   const styled = renderMarkdownToStyledHtml(markdown, config)
@@ -353,7 +484,8 @@ export function renderMarkdownToWeChatHtml(markdown: string, config: RenderConfi
   html = resolveCssLiterals(html, values)
   html = convertImageDimensionsToStyle(html)
   html = bracketWithZeroFontParagraphs(html)
-  html = stripClassAttributes(html)
+  html = normalizeAnchorHrefs(html)
+  html = sanitizeSvgsForWeChat(html)
 
   return { html, readingTime: styled.readingTime }
 }

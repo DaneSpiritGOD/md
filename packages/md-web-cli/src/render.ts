@@ -21,21 +21,23 @@ function escapeStyleContent(css: string): string {
   return css.replace(/<\/style/gi, `<\\/style`)
 }
 
-/** Default body text color (site copy flow inherits rgb(10,10,10) from body). */
-export const DEFAULT_BODY_COLOR = `rgb(10,10,10)`
-
 function resolveHeadingStyles(config: RenderConfigInput): HeadingStyles | undefined {
   return config.headingStyles
 }
 
 /**
- * Body text color applied the way the copy flow does: a rule on the output
- * container that every element inherits. Default rgb(10,10,10). The rendered
- * fragment's root element is `<section class="container">`, so target that —
- * juice inlines it onto the container in WeChat output.
+ * Strip the site's `#output` scope from a stylesheet so its selectors match the
+ * rendered fragment, exactly as apps/web does before juice
+ * (share-styles.ts stripOutputScope). A bare `#output {` becomes `body {`; a
+ * descendant `#output x` becomes `x`. This is what makes rules like
+ * `#output section > :first-child { margin-top: 0 !important }` apply to the
+ * fragment's own first children.
  */
-function generateBodyColorCSS(bodyColor: string): string {
-  return `section.container {\n  color: ${bodyColor};\n}`
+function stripOutputScope(css: string): string {
+  return css
+    .replace(/#output\s*\{/g, `body {`)
+    .replace(/#output\s+/g, ``)
+    .replace(/^#output\s*/gm, ``)
 }
 
 /**
@@ -48,6 +50,16 @@ function unscopeCustomCSS(css: string): string {
     .replace(/#output\s*\{/g, `section.container {`)
     .replace(/#output\s+/g, ``)
     .replace(/^#output\s*/gm, ``)
+}
+
+/**
+ * Inject heading anchor ids (`#0`, `#1`, …) mirroring the site's render store
+ * (extractTitles, apps/web/src/stores/render.ts). Pure string work so it
+ * matches the browser output byte for byte without a DOM parse.
+ */
+function injectHeadingIds(html: string): string {
+  let i = 0
+  return html.replace(/data-heading="true"/g, () => `data-heading="true" id="${i++}"`)
 }
 
 export interface RenderResult {
@@ -86,7 +98,7 @@ export function renderMarkdownToStyledHtml(markdown: string, config: RenderConfi
   })
 
   const { html: baseHtml, readingTime } = renderMarkdown(markdown, renderer)
-  const processedHtml = postProcessHtml(baseHtml, readingTime, renderer)
+  const processedHtml = injectHeadingIds(postProcessHtml(baseHtml, readingTime, renderer))
 
   const cssConfig = {
     primaryColor,
@@ -108,18 +120,18 @@ export function renderMarkdownToStyledHtml(markdown: string, config: RenderConfi
 
   // Order mirrors the site's applyTheme: variables, base, theme, heading
   // styles, then the active CSS editor tab's custom CSS (site scopes custom
-  // CSS to #output; the intermediate form already targets #output).
+  // CSS to #output; the intermediate form already targets #output). Base CSS
+  // is #output-scoped on the site, so strip that scope here (as the copy flow
+  // does before juice) for selectors such as `section > :first-child`.
   const customCSS = config.customCss?.trim() ? unscopeCustomCSS(config.customCss) : ``
-  const bodyColorCSS = generateBodyColorCSS(config.bodyColor ?? DEFAULT_BODY_COLOR)
 
   const mergedCSS = [
     variablesCSS,
-    baseCSSContent,
+    stripOutputScope(baseCSSContent),
     themeCSS,
     headingStylesCSS,
     hljsCSS,
     customCSS,
-    bodyColorCSS,
   ].filter(Boolean).join(`\n\n`)
 
   const html = `<style>\n${escapeStyleContent(processCSS(mergedCSS))}\n</style>\n${processedHtml}`

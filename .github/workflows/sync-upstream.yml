@@ -29,9 +29,8 @@ name: Sync upstream doocs/md
 #   2. Build failure    — the build inside `pnpm wcli:verify` fails.
 #   3. Verify failure   — `pnpm wcli:verify` exits non-zero (the gate is red).
 #
-# While the gate is deliberately red (docs/adr/0003-single-verify-gate.md),
-# this workflow stays blocking on purpose: upstream merges are held until the
-# known differences are worked through.
+# This workflow stays blocking: an upstream merge is held until the verify gate
+# is green for the merged result.
 #
 # No new upstream commits → job exits successfully, no PR, no branch change.
 
@@ -137,10 +136,8 @@ jobs:
         if: steps.upstream.outputs.new == 'true'
         run: pnpm exec playwright install --with-deps chromium
 
-      # Unit tests run before the verify gate so a red gate (a known state per
-      # docs/adr/0003-single-verify-gate.md) never hides a CLI test regression —
-      # a test failure is cheap and reports even when byte-exact verification
-      # is not yet green.
+      # Unit tests run before the verify gate so a CLI test regression reports
+      # cheaply even if byte-exact verification is not yet green.
       - name: Run package unit tests
         if: steps.upstream.outputs.new == 'true'
         run: pnpm --filter @dane.dai/md-web-cli test
