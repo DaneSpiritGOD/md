@@ -11,7 +11,7 @@ renders the same fixture through the CLI, and compares the two outputs **byte
 for byte with zero tolerance**. Exit code 0 only on exact equality.
 
 There is no tolerance, no allow-list, no known-gaps list, and no expiry
-mechanism — by design. See [ADR-0003](../../../docs/adr/0003-single-verify-gate.md)
+mechanism — by design. See [ADR-0003](../adr/0003-single-verify-gate.md)
 for why a threshold is worse than a failure.
 
 ## Invocation
@@ -54,7 +54,7 @@ difference cannot masquerade as an implementation difference.
 | `fixtures/minimal.md` | Infrastructure probe: heading, paragraph, inline code. A failure means the harness is broken; a success proves nothing about fidelity |
 
 Both run by default so one command produces both signals. See
-[fixtures/README.md](../fixtures/README.md).
+[fixtures/README.md](../../packages/md-web-cli/fixtures/README.md).
 
 ## Reading a failure
 
@@ -157,4 +157,4 @@ default fixtures, so the gate reports green. The remaining transition — making
 `verify` a required (blocking) status check on every push and pull request — is
 tracked as [issue #33](https://github.com/DaneSpiritGOD/md/issues/33). Do not
 restore a tolerance to widen green; the byte-exact bar stays. See
-[ADR-0003](../../../docs/adr/0003-single-verify-gate.md).
+[ADR-0003](../adr/0003-single-verify-gate.md).

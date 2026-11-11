@@ -21,11 +21,11 @@ md-web-cli --help
 
 ## Documentation
 
-Full documentation lives in [`docs/`](./docs/README.md):
+Full documentation lives in the repository's [`docs/md-web-cli/`](../../docs/md-web-cli/README.md):
 
-- [The `verify` gate](./docs/verify.md) — one command, byte-exact comparison
-- [Manual WeChat check](./docs/manual-wechat-check.md) — the one human step
-- [Known blind spots](./docs/blind-spots.md) — what a green result does not mean
+- [The `verify` gate](../../docs/md-web-cli/verify.md) — one command, byte-exact comparison
+- [Manual WeChat check](../../docs/md-web-cli/manual-wechat-check.md) — the one human step
+- [Known blind spots](../../docs/md-web-cli/blind-spots.md) — what a green result does not mean
 - [Fixtures](./fixtures/README.md) — the product signal and the infrastructure probe
 
 ## License
