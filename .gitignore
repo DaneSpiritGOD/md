@@ -59,6 +59,7 @@ web-ext.config.ts
 !.claude/skills/create-pr
 !.claude/skills/git-commit
 !.claude/skills/wechat-svg
+!.claude/skills/prune-branches
 
 # vite-plugin-pwa dev output
 dev-dist
