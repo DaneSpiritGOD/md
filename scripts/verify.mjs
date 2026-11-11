@@ -56,56 +56,51 @@ const ARTICLE_MARKER = `ARTICLE MARKER: this article must never be rendered`
 /**
  * The config-projection case.
  *
- * Runs the `minimal` fixture with a built-in Designer export that is
- * deliberately stuffed with article content and UI state. It proves the gate
- * never compares an article carried in the export, only the fixture: the config
- * is projected down to render-affecting keys, the same projected file feeds
- * both sides, and the article marker must never appear in either output. This is
- * the guarantee the former browser-gated `verify-config.test.ts` provided, now
- * part of the gate itself so every default run covers it.
+ * Runs the `minimal` fixture with the **committed real Designer export** (a
+ * config a user actually exported from the browser's import/export feature, not
+ * a hand-built fixture). It proves the gate never compares an article carried in
+ * the export, only the fixture: the config is projected down to render-affecting
+ * keys, the same projected file feeds both sides, and the article marker must
+ * never appear in either output. This is the guarantee the former browser-gated
+ * `verify-config.test.ts` provided, now part of the gate itself so every default
+ * run covers it.
+ *
+ * The export is derived from `fixtures/designer-config.json` at gate load time:
+ * the real render settings and pure-UI state are kept as-is (theme, colors, the
+ * active custom-CSS tab, and so on), while the article content is swapped for a
+ * fake marker. Using the committed export as the single source of truth means
+ * the case can never drift from the real configuration it is meant to exercise.
  *
  * It is a case, not a fixture: `--fixture` still names only `full`/`minimal`
  * (and paths), so the case runs once in the default gate and cannot be
  * misread as a fixture a user would render.
  */
-const CONFIG_CASE = {
-  name: `config`,
-  role: `config projection gate`,
-  summary: `config projection: runs minimal with a config, asserting article content never leaks`,
-  failureMeaning: `config projection leaked article content or UI state into the comparison`,
-  fixture: FIXTURES.minimal,
-  export: {
+const DESIGNER_CONFIG_FIXTURE = join(FIXTURE_DIR, `designer-config.json`)
+
+function buildConfigCaseExport() {
+  const raw = JSON.parse(readFileSync(DESIGNER_CONFIG_FIXTURE, `utf8`))
+  return {
+    // The real render-affecting settings first, kept verbatim from the export
+    // (theme, colors, the active custom-CSS tab, and so on).
+    ...raw,
     // Article content: must be dropped before either side sees the config.
     posts: [{ id: `post-1`, content: `# ${ARTICLE_MARKER}` }],
     currentPostId: `post-1`,
     currentPostIndex: 0,
     titleList: [ARTICLE_MARKER],
     readingTime: { words: 9999, minutes: 42 },
-    // Pure UI: no effect on the rendered article.
-    isDark: true,
-    isOpenRightSlider: false,
-    isOpenPostSlider: true,
-    showAIToolbox: false,
-    isShowCssEditor: true,
-    isShowTableEditDialog: true,
-    isShowUploadImgDialog: true,
-    aiDialogVisible: true,
-    aiImageDialogVisible: true,
-    // Render-affecting: reach both sides.
-    theme: `default`,
-    primaryColor: `#0F4C81`,
-    fontFamily: `-apple-system-font,BlinkMacSystemFont, Helvetica Neue, PingFang SC, Hiragino Sans GB , Microsoft YaHei UI , Microsoft YaHei ,Arial,sans-serif`,
-    fontSize: `16px`,
-    codeBlockTheme: `https://cdn-doocs.oss-cn-shenzhen.aliyuncs.com/npm/highlightjs/11.11.1/styles/github-dark.min.css`,
-    legend: `alt`,
-    isMacCodeBlock: true,
-    isShowLineNumber: false,
-    isCiteStatus: false,
-    isCountStatus: false,
-    isUseIndent: false,
-    isUseJustify: false,
-    cssContentConfig: { active: `default`, tabs: [{ id: `default`, title: `default`, name: `default`, content: `` }] },
-  },
+    // Pure-UI state stays verbatim from the export: projection drops it before
+    // either side sees the config, so it has no effect on the rendered article.
+  }
+}
+
+const CONFIG_CASE = {
+  name: `config`,
+  role: `config projection gate`,
+  summary: `config projection: runs minimal with the committed real Designer export, asserting article content never leaks`,
+  failureMeaning: `config projection leaked article content or UI state into the comparison`,
+  fixture: FIXTURES.minimal,
+  export: buildConfigCaseExport(),
 }
 
 const BUILD_COMMANDS = [
