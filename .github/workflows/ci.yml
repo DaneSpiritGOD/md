@@ -79,8 +79,30 @@ jobs:
       - name: Run tests
         run: pnpm run test
 
-      # The verify gate's browser is downloaded once per Playwright version and
-      # restored from cache on every later run.
+  # The verify gate's browser is downloaded once per Playwright version and
+  # restored from cache on every later run. It lives here, not in `test`, so the
+  # unit suite stays browser-free while the gate runs the full byte-exact
+  # comparison (full + minimal fixtures plus the config-projection case).
+  web-cli-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up pnpm
+        uses: pnpm/setup@v3
+        with:
+          version: 12.14.0
+          runtime: node@22
+          cache: true
+          install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Resolve Playwright version
         id: playwright
         run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
@@ -94,17 +116,11 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      # The config-projection acceptance needs a browser, so it runs here
-      # instead of in the fast suite. Blocking: it guards a real regression
-      # (an export's article content leaking into the comparison).
-      - name: Run browser-gated CLI tests
-        env:
-          MD_WEB_CLI_BROWSER_TESTS: '1'
-        run: pnpm --filter @dane.dai/md-web-cli exec vitest run tests/verify-config.test.ts
-
-      # The verify gate is green for the default fixtures and now blocking:
-      # a difference on any change fails the job. The transition to blocking is
-      # recorded in docs/adr/0003-single-verify-gate.md.
+      # The verify gate is green for the default fixtures and now blocking: a
+      # difference on any change fails the job. It also runs the config-projection
+      # case, so an export's article content leaking into the comparison fails
+      # here too. The transition to blocking is recorded in
+      # docs/adr/0003-single-verify-gate.md.
       - name: Verify rendering
         run: pnpm wcli:verify
 

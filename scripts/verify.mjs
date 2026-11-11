@@ -51,6 +51,63 @@ const FIXTURES = {
   },
 }
 
+const ARTICLE_MARKER = `ARTICLE MARKER: this article must never be rendered`
+
+/**
+ * The config-projection case.
+ *
+ * Runs the `minimal` fixture with a built-in Designer export that is
+ * deliberately stuffed with article content and UI state. It proves the gate
+ * never compares an article carried in the export, only the fixture: the config
+ * is projected down to render-affecting keys, the same projected file feeds
+ * both sides, and the article marker must never appear in either output. This is
+ * the guarantee the former browser-gated `verify-config.test.ts` provided, now
+ * part of the gate itself so every default run covers it.
+ *
+ * It is a case, not a fixture: `--fixture` still names only `full`/`minimal`
+ * (and paths), so the case runs once in the default gate and cannot be
+ * misread as a fixture a user would render.
+ */
+const CONFIG_CASE = {
+  name: `config`,
+  role: `config projection gate`,
+  summary: `config projection: runs minimal with a config, asserting article content never leaks`,
+  failureMeaning: `config projection leaked article content or UI state into the comparison`,
+  fixture: FIXTURES.minimal,
+  export: {
+    // Article content: must be dropped before either side sees the config.
+    posts: [{ id: `post-1`, content: `# ${ARTICLE_MARKER}` }],
+    currentPostId: `post-1`,
+    currentPostIndex: 0,
+    titleList: [ARTICLE_MARKER],
+    readingTime: { words: 9999, minutes: 42 },
+    // Pure UI: no effect on the rendered article.
+    isDark: true,
+    isOpenRightSlider: false,
+    isOpenPostSlider: true,
+    showAIToolbox: false,
+    isShowCssEditor: true,
+    isShowTableEditDialog: true,
+    isShowUploadImgDialog: true,
+    aiDialogVisible: true,
+    aiImageDialogVisible: true,
+    // Render-affecting: reach both sides.
+    theme: `default`,
+    primaryColor: `#0F4C81`,
+    fontFamily: `-apple-system-font,BlinkMacSystemFont, Helvetica Neue, PingFang SC, Hiragino Sans GB , Microsoft YaHei UI , Microsoft YaHei ,Arial,sans-serif`,
+    fontSize: `16px`,
+    codeBlockTheme: `https://cdn-doocs.oss-cn-shenzhen.aliyuncs.com/npm/highlightjs/11.11.1/styles/github-dark.min.css`,
+    legend: `alt`,
+    isMacCodeBlock: true,
+    isShowLineNumber: false,
+    isCiteStatus: false,
+    isCountStatus: false,
+    isUseIndent: false,
+    isUseJustify: false,
+    cssContentConfig: { active: `default`, tabs: [{ id: `default`, title: `default`, name: `default`, content: `` }] },
+  },
+}
+
 const BUILD_COMMANDS = [
   [`--filter`, `@md/web`, `build:only`],
   [`--filter`, `@dane.dai/md-web-cli`, `build`],
@@ -70,6 +127,9 @@ Fixtures (both run by default):
 ${
   Object.entries(FIXTURES).map(([name, fixture]) => `  ${name.padEnd(9)} ${fixture.role} — ${fixture.summary}`).join(`\n`)
 }
+
+Cases (run by default):
+  ${CONFIG_CASE.name.padEnd(9)} ${CONFIG_CASE.role} — ${CONFIG_CASE.summary}
 
 Options:
   --fixture <name|path>   Run one fixture (or a path to a Markdown file) instead
@@ -212,22 +272,26 @@ function printPass(fixture, html) {
 }
 
 function isPassing(result) {
-  return result.comparison.equal && result.structuralProblems.length === 0
+  return result.comparison.equal
+    && result.structuralProblems.length === 0
+    && !result.configLeak
 }
 
 function printSummary(results) {
   const passed = results.filter(isPassing).length
   process.stdout.write(
-    `[verify] summary: ${results.length} fixture(s) — ${passed} passed, ${results.length - passed} failed\n`,
+    `[verify] summary: ${results.length} check(s) — ${passed} passed, ${results.length - passed} failed\n`,
   )
   for (const result of results) {
-    const { fixture, comparison, structuralProblems } = result
+    const { fixture, comparison, structuralProblems, configLeak } = result
     const verdict = isPassing(result) ? `PASS` : `FAIL`
     const details = []
     if (!comparison.equal)
       details.push(`${comparison.hunkCount} hunks: ${fixture.failureMeaning}`)
     if (structuralProblems.length > 0)
       details.push(`${structuralProblems.length} structural problem(s)`)
+    if (configLeak)
+      details.push(`config projection leaked article content into the comparison`)
     const detail = details.length > 0 ? ` — ${details.join(`; `)}` : ``
     process.stdout.write(`  ${verdict} ${fixture.name} (${fixture.role})${detail}\n`)
   }
@@ -282,6 +346,76 @@ async function verifyFixture({ fixture, workDir, configPath, projectedConfig, ca
   process.stdout.write(`[verify] report: ${join(artifactDir, `report.txt`)}\n`)
 
   return { fixture, comparison, structuralProblems }
+}
+
+/**
+ * Whether the config-projection case should run in this invocation.
+ *
+ * It runs in the default gate. A `--fixture` narrows to one fixture for
+ * debugging, and an explicit `--config` already exercises projection for that
+ * fixture, so either opts it out.
+ */
+function configCaseShouldRun(args, requestedConfig) {
+  return args.fixture === null && requestedConfig === undefined
+}
+
+/**
+ * Run the config-projection case.
+ *
+ * Projects the built-in export, writes the projected config, renders the
+ * `minimal` fixture through the whole gate with it, then asserts the article
+ * carried in the export never reaches either side. A leak fails the case even
+ * when the two sides are byte-identical, because a leaked article would compare
+ * identical while still shipping the marker.
+ */
+async function verifyConfigCase({ workDir, captureOracle }) {
+  const { projected, dropped } = projectDesignerConfig(CONFIG_CASE.export)
+  const keptCount = Object.keys(projected).length
+  const droppedCount = dropped.content.length + dropped.ui.length + dropped.unknown.length
+  process.stdout.write(
+    `[verify] config: ${keptCount} render-affecting key(s) kept, ${droppedCount} dropped `
+    + `(${dropped.content.length} article-content, ${dropped.ui.length} UI, ${dropped.unknown.length} unknown)\n`,
+  )
+  if (dropped.unknown.length > 0)
+    process.stdout.write(`[verify] config: unknown keys ignored: ${dropped.unknown.join(`, `)}\n`)
+  const configPath = join(workDir, `config-case-projected-config.json`)
+  writeFileSync(configPath, JSON.stringify(projected, null, 2), `utf8`)
+  process.stdout.write(`[verify] config: the same projected file goes to both sides (${configPath})\n`)
+
+  const result = await verifyFixture({
+    fixture: {
+      name: CONFIG_CASE.name,
+      ...CONFIG_CASE.fixture,
+      role: CONFIG_CASE.role,
+      summary: CONFIG_CASE.summary,
+      failureMeaning: CONFIG_CASE.failureMeaning,
+    },
+    workDir,
+    configPath,
+    projectedConfig: projected,
+    captureOracle,
+  })
+
+  const artifactDir = join(workDir, CONFIG_CASE.name)
+  const cliHtml = readFileSync(join(artifactDir, `cli.html`), `utf8`)
+  const oracleHtml = readFileSync(join(artifactDir, `oracle.html`), `utf8`)
+  const leakedSides = []
+  for (const [side, html] of [[`cli`, cliHtml], [`oracle`, oracleHtml]]) {
+    if (html.includes(ARTICLE_MARKER))
+      leakedSides.push(side)
+  }
+
+  if (leakedSides.length > 0) {
+    process.stderr.write(
+      `[verify] CONFIG LEAK ${CONFIG_CASE.name}: the article marker reached the ${leakedSides.join(` and `)} output\n`,
+    )
+    result.configLeak = true
+  }
+  else {
+    result.configLeak = false
+  }
+
+  return result
 }
 
 async function runSelfTestMode() {
@@ -410,6 +544,12 @@ async function main() {
     const results = []
     for (const fixture of fixtures)
       results.push(await verifyFixture({ fixture, workDir, configPath, projectedConfig, captureOracle }))
+
+    // The config case runs in the default gate only. A `--fixture` narrows to a
+    // single fixture for debugging, and an explicit `--config` already exercises
+    // config projection for that fixture, so running it again would be redundant.
+    if (configCaseShouldRun(args, requestedConfig))
+      results.push(await verifyConfigCase({ workDir, captureOracle }))
 
     printSummary(results)
 
