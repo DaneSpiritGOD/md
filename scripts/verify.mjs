@@ -66,10 +66,10 @@ const ARTICLE_MARKER = `ARTICLE MARKER: this article must never be rendered`
  * run covers it.
  *
  * The export is derived from `fixtures/designer-config.json` at gate load time:
- * the real render settings are kept as-is (theme, colors, the active custom-CSS
- * tab), while the article and pure-UI state are swapped for fake markers. Using
- * the committed export as the single source of truth means the case can never
- * drift from the real configuration it is meant to exercise.
+ * the real render settings and pure-UI state are kept as-is (theme, colors, the
+ * active custom-CSS tab, and so on), while the article content is swapped for a
+ * fake marker. Using the committed export as the single source of truth means
+ * the case can never drift from the real configuration it is meant to exercise.
  *
  * It is a case, not a fixture: `--fixture` still names only `full`/`minimal`
  * (and paths), so the case runs once in the default gate and cannot be
@@ -89,16 +89,8 @@ function buildConfigCaseExport() {
     currentPostIndex: 0,
     titleList: [ARTICLE_MARKER],
     readingTime: { words: 9999, minutes: 42 },
-    // Pure UI: no effect on the rendered article. Reset to defaults.
-    isDark: false,
-    isOpenRightSlider: false,
-    isOpenPostSlider: false,
-    showAIToolbox: false,
-    isShowCssEditor: false,
-    isShowTableEditDialog: false,
-    isShowUploadImgDialog: false,
-    aiDialogVisible: false,
-    aiImageDialogVisible: false,
+    // Pure-UI state stays verbatim from the export: projection drops it before
+    // either side sees the config, so it has no effect on the rendered article.
   }
 }
 
