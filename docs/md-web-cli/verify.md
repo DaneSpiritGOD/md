@@ -56,6 +56,21 @@ difference cannot masquerade as an implementation difference.
 Both run by default so one command produces both signals. See
 [fixtures/README.md](../../packages/md-web-cli/fixtures/README.md).
 
+## Config case
+
+Alongside the two fixtures, the default gate runs a third check named `config`.
+It renders the `minimal` fixture under the **committed real Designer export**
+(`fixtures/designer-config.json`) — a config a user actually exported from the
+browser's import/export feature — with the article content replaced by a marker.
+It asserts the gate never compares an article carried in the export, only the
+fixture: the config is projected to render-affecting keys, the same projected
+file feeds both sides, and the marker must appear in neither output.
+
+Because the case derives its input from the committed export, it exercises the
+CLI under the real configuration it is meant to reproduce (theme, colors,
+code-block theme, the active custom-CSS tab) rather than a hand-built stand-in,
+and it cannot drift from that configuration.
+
 ## Reading a failure
 
 ```

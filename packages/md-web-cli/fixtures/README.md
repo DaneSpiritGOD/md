@@ -25,6 +25,20 @@ Both fixtures run by default so one command produces both signals; `--fixture`
 restricts a run to one while debugging. See the gate's documentation for
 invocation.
 
+## `designer-config.json` — the real Designer export used by the config case
+
+A Designer config exported verbatim from the browser (the web application's
+import/export feature on md.doocs.org), committed as the source of truth for the
+gate's config-projection case. It is not a Markdown fixture: it is the export
+that `scripts/verify.mjs` derives the `config` case's input from, replacing the
+article content with a marker while keeping the real render-affecting settings
+(theme, colors, code-block theme, the active custom-CSS tab, and so on).
+
+It runs the `minimal` fixture under your real configuration and asserts the
+article carried in the export never leaks into either output. Keeping it
+committed means the config case can never drift from the configuration the CLI
+is actually meant to reproduce. See [verify.md](../../../docs/md-web-cli/verify.md).
+
 ### Reading a probe failure
 
 Check where it stopped:
