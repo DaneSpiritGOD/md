@@ -2,12 +2,12 @@
 
 Everything about `@dane.dai/md-web-cli` lives here.
 
-| Document                                           | Read it for                                                           |
-| -------------------------------------------------- | --------------------------------------------------------------------- |
-| [verify.md](./verify.md)                           | The `verify` gate: what it does, how to run it, how to read a failure |
-| [manual-wechat-check.md](./manual-wechat-check.md) | The one human step: pasting both outputs into the real WeChat editor  |
-| [blind-spots.md](./blind-spots.md)                 | What the gate cannot see, so a green result is never over-read        |
-| [fixtures](../fixtures/README.md)                  | The product fixture and the infrastructure probe                      |
+| Document                                                 | Read it for                                                           |
+| -------------------------------------------------------- | --------------------------------------------------------------------- |
+| [verify.md](./verify.md)                                 | The `verify` gate: what it does, how to run it, how to read a failure |
+| [manual-wechat-check.md](./manual-wechat-check.md)       | The one human step: pasting both outputs into the real WeChat editor  |
+| [blind-spots.md](./blind-spots.md)                       | What the gate cannot see, so a green result is never over-read        |
+| [fixtures](../../packages/md-web-cli/fixtures/README.md) | The product fixture and the infrastructure probe                      |
 
 ## Install
 
