@@ -162,11 +162,12 @@ Reusable workflows live in [`.agents/skills/`](./.agents/skills/) (canonical). C
 .claude/skills/<name> → ../../.agents/skills/<name>
 ```
 
-| Skill        | When to use                                                                           |
-| ------------ | ------------------------------------------------------------------------------------- |
-| `git-commit` | Commit changes with Conventional Commits (`/git-commit` or "commit my changes")       |
-| `create-pr`  | Create a GitHub pull request (`/create-pr` or "open a PR")                            |
-| `wechat-svg` | WeChat SVG whitelist, bubbling-group interaction, paste compatibility (`/wechat-svg`) |
+| Skill            | When to use                                                                                          |
+| ---------------- | ---------------------------------------------------------------------------------------------------- |
+| `git-commit`     | Commit changes with Conventional Commits (`/git-commit` or "commit my changes")                      |
+| `create-pr`      | Create a GitHub pull request (`/create-pr` or "open a PR")                                           |
+| `wechat-svg`     | WeChat SVG whitelist, bubbling-group interaction, paste compatibility (`/wechat-svg`)                |
+| `prune-branches` | Clean up non-main branches and abandoned worktrees using the GitHub PR lifecycle (`/prune-branches`) |
 
 Invoke manually: `/skill-name` in Cursor or Claude Code; OpenCode uses the `skill` tool.
 
