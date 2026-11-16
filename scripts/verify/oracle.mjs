@@ -227,7 +227,9 @@ async function waitForStablePreview(page, beforeSignature) {
  *   before app boot, e.g. to seed a projected config into localStorage.
  * @param {(page: import('playwright').Page) => Promise<void>} [options.afterLoad]
  *   Runs once the app shell is up and before the fixture is injected.
- * @returns {Promise<string>} The captured clipboard HTML (byte-exact).
+ * @returns {Promise<{wechatHtml: string, bodyHtml: string}>} The captured
+ *   clipboard WeChat HTML (`wechatHtml`) and the `#output` innerHTML
+ *   (`bodyHtml`), both byte-exact.
  */
 export async function captureOracle(options) {
   const {
@@ -307,6 +309,14 @@ export async function captureOracle(options) {
 
     await waitForStablePreview(page, before.signature)
 
+    // The body fragment is the `#output` innerHTML — the web app's
+    // `post.content` that the Cose 头条 post path feeds the Toutiao editor.
+    // Capture it from the stable preview, before the copy flow re-renders.
+    const bodyHtml = await page.evaluate(() => {
+      const output = document.getElementById(`output`)
+      return output ? output.innerHTML : ``
+    })
+
     // Trigger the real WeChat copy flow through the header's copy button.
     const copyButton = page.locator(`header button:has-text("复制"), .header-container button:has-text("复制")`).first()
     if (await copyButton.count() === 0)
@@ -346,7 +356,8 @@ export async function captureOracle(options) {
     // The raw clipboard payload: no provenance comment, no wrapper, nothing
     // added. Any extra byte here would make the byte comparison lie.
     await writeFile(join(safeOutDir, `oracle.html`), clipboardHtml, `utf8`)
-    return clipboardHtml
+    await writeFile(join(safeOutDir, `body.html`), bodyHtml, `utf8`)
+    return { wechatHtml: clipboardHtml, bodyHtml }
   }
   finally {
     if (browser)

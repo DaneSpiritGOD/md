@@ -72,6 +72,35 @@ describe('cli subprocess: render', () => {
     expect(result.stderr).toMatch(/-o/)
   })
 
+  it('--raw-body emits the body fragment without the outer <style> prefix', () => {
+    const dir = makeTmpDir()
+    const out = path.join(dir, 'body.html')
+    const result = runCli(['render', fixturePath, '-o', out, '--raw-body'])
+
+    expect(result.status).toBe(0)
+    const html = fs.readFileSync(out, 'utf-8')
+    // Body fragment: starts with the container section, no outer themed style
+    // block, but keeps the postProcessHtml inline <style> blocks.
+    expect(html.startsWith('<section class="container">')).toBe(true)
+    expect(html.startsWith('<style>')).toBe(false)
+    expect(html).toMatch(/\.hljs\.code__pre\s*>\s*\.mac-sign\s*\{/)
+    expect(html).toMatch(/\sclass\s*=/i)
+  }, 30_000)
+
+  it('--raw-body output equals --raw with the outer style block stripped', () => {
+    const dir = makeTmpDir()
+    const rawOut = path.join(dir, 'raw.html')
+    const bodyOut = path.join(dir, 'body.html')
+    runCli(['render', fixturePath, '-o', rawOut, '--raw'])
+    runCli(['render', fixturePath, '-o', bodyOut, '--raw-body'])
+
+    const raw = fs.readFileSync(rawOut, 'utf-8')
+    const body = fs.readFileSync(bodyOut, 'utf-8')
+    const styleEnd = raw.indexOf('</style>')
+    const expectedBody = raw.slice(styleEnd + '</style>'.length).replace(/^\n/, '')
+    expect(body).toBe(expectedBody)
+  }, 30_000)
+
   it('rejects unknown commands', () => {
     const result = runCli(['frobnicate'])
     expect(result.status).not.toBe(0)

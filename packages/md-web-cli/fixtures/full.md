@@ -96,6 +96,25 @@ pnpm install && pnpm run build
 
 ---
 
+## Hashtags
+
+Topic hashtags render as plain paragraph text (`#` preserved), never as headings.
+CommonMark-compliant engines keep the literal `#`.
+
+Line-start hashtag form A (hash then chars, no space):
+#hashtag1 #hashtag2
+
+Inline hashtag form A: a topic like #topic1 #topic2 sits in the middle of prose.
+
+Line-start hashtag form B (closing hash):
+#hashtag1# #hashtag2#
+
+Inline hashtag form B: a topic like #topic1# #topic2# sits in the middle of prose.
+
+## A Real Heading Still Renders as a Heading
+
+This heading has a space after the `##`, so it is a real `<h2>`.
+
 ## Closing
 
 The fixture ends here. Tickets 04/05 reuse this file.
