@@ -6,17 +6,6 @@ name: Publish md-web-cli
 # Red runs publish nothing; failure notification is GitHub's built-in Actions
 # email (account-level: Email + only failed workflows) — no notification
 # secrets or steps here.
-#
-# The gate is green for the default fixtures; a red run publishes nothing.
-#
-# DANE: before the first successful publish, configure the npmjs trusted
-# publisher for @dane.dai/md-web-cli (npmjs.com → package/Automation settings):
-#   - package name: @dane.dai/md-web-cli
-#   - repository: DaneSpiritGOD/md
-#   - workflow filename: publish-md-web-cli.yml
-#   - environment: (leave empty — this workflow uses no GitHub environment)
-# The very first publish is manual (trusted publisher cannot be configured
-# before the package exists on npm); afterwards this workflow owns publishing.
 
 on:
   push:
