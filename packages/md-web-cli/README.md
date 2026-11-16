@@ -16,6 +16,8 @@ Requires Node >= 22.22.2.
 
 ```bash
 md-web-cli render <input.md> -o output.html
+md-web-cli render <input.md> -o output.html --raw      # intermediate form (with <style> block)
+md-web-cli render <input.md> -o output.html --raw-body # body fragment only (#output innerHTML)
 md-web-cli --help
 ```
 

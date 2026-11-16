@@ -53,11 +53,29 @@ const CASES = [
 ]
 
 /**
+ * A body reverse case: the body gate must reject a body that gained a stray
+ * byte (here, an injected `<style>` block). Without this, the body comparison
+ * could be a pass-only gate that can never prove it can fail.
+ */
+const BODY_CASES = [
+  {
+    name: `body injected style block`,
+    mutate: body => `<style>p { color: red }</style>${body}`,
+  },
+  {
+    name: `body mutated byte`,
+    mutate: body => body.replace(`</style>`, `</style> `),
+  },
+]
+
+/**
  * @param {string} knownGoodHtml A CLI render that already passes the structural
  *   assertions.
- * @returns {{baselineProblems: Array, positiveControl: boolean, cases: Array<{name: string, rejected: boolean, expectedKind: string|null, matchedKinds: string[], expectedKindFound: boolean, firstReason: string}>}}
+ * @param {string} knownGoodBody The CLI body fragment (--raw-body) for the same
+ *   fixture, known good.
+ * @returns {{baselineProblems: Array, positiveControl: boolean, cases: Array<{name: string, rejected: boolean, expectedKind: string|null, matchedKinds: string[], expectedKindFound: boolean, firstReason: string}>, bodyCases: Array<{name: string, rejected: boolean, firstReason: string}>}}
  */
-export function runSelfTest(knownGoodHtml) {
+export function runSelfTest(knownGoodHtml, knownGoodBody) {
   const baselineProblems = findStructuralProblems(knownGoodHtml)
   // Positive control: a comparator that always reports a difference would make
   // every reverse case "pass" for the wrong reason.
@@ -79,5 +97,16 @@ export function runSelfTest(knownGoodHtml) {
     }
   })
 
-  return { baselineProblems, positiveControl, cases }
+  const bodyPositiveControl = compareOutputs(knownGoodBody, knownGoodBody).equal
+  const bodyCases = BODY_CASES.map((testCase) => {
+    const mutant = testCase.mutate(knownGoodBody)
+    const comparison = compareOutputs(knownGoodBody, mutant)
+    return {
+      name: testCase.name,
+      rejected: !comparison.equal && bodyPositiveControl,
+      firstReason: `byte comparison rejected the body mutant`,
+    }
+  })
+
+  return { baselineProblems, positiveControl, cases, bodyCases }
 }

@@ -7,8 +7,12 @@ Two inputs for the `verify` gate, with different meanings.
 Exercises every rendering surface the CLI supports: h1–h6, tables with
 alignment, fenced code blocks in several languages, nested lists, nested
 blockquotes, images with and without titles, inline code, strong/emphasis/
-strikethrough, links, and horizontal rules. A difference here is a product
-fidelity difference; this is the fixture the gate exists for.
+strikethrough, links, horizontal rules, and hashtags (both forms: `#hashtag1
+#hashtag2` and the closing-`#` `#hashtag1# #hashtag2#`, at line start and
+inline). A difference here is a product fidelity difference; this is the
+fixture the gate exists for. The hashtag lines also let the gate assert that
+topic tags render as paragraph text, never as headings — see
+[verify.md](../../../docs/md-web-cli/verify.md).
 
 ## `minimal.md` — an infrastructure probe
 

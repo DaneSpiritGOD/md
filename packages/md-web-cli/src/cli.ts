@@ -14,7 +14,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import { applyFlagOverrides, normalizeStyleConfig } from './config'
-import { renderMarkdownToStyledHtml } from './render'
+import { renderMarkdownToBodyHtml, renderMarkdownToStyledHtml } from './render'
 import { PendingPlaceholderError, renderMarkdownToWeChatHtml } from './wechat'
 
 interface ParsedArgs {
@@ -22,6 +22,7 @@ interface ParsedArgs {
   output?: string
   config?: string
   raw?: boolean
+  rawBody?: boolean
   cssTab?: string
   flags: FlagOverrides
 }
@@ -36,6 +37,9 @@ Options:
   --css-tab <id|name>       Use the given CSS editor tab instead of the active one
   --raw                     Emit the pre-inlining intermediate form (with
                             <style> block) instead of WeChat-ready HTML
+  --raw-body                Emit the body fragment only (the web app's
+                            #output innerHTML / Cose 头条 post.content) instead
+                            of WeChat-ready HTML
   --theme <name>            default | grace | simple
   --primary-color <color>   Primary accent color (hex)
   --font-family <stack>     Font family stack
@@ -95,6 +99,9 @@ function parseArgs(argv: string[]): ParsedArgs {
     }
     else if (arg === `--raw`) {
       parsed.raw = true
+    }
+    else if (arg === `--raw-body`) {
+      parsed.rawBody = true
     }
     else if (arg === `--css-tab`) {
       parsed.cssTab = argv[++i]
@@ -273,9 +280,11 @@ function runRender(argv: string[]): void {
 
   let result
   try {
-    result = parsed.raw
-      ? renderMarkdownToStyledHtml(markdown, config)
-      : renderMarkdownToWeChatHtml(markdown, config)
+    result = parsed.rawBody
+      ? renderMarkdownToBodyHtml(markdown, config)
+      : parsed.raw
+        ? renderMarkdownToStyledHtml(markdown, config)
+        : renderMarkdownToWeChatHtml(markdown, config)
   }
   catch (error) {
     if (error instanceof PendingPlaceholderError) {

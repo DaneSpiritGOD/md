@@ -114,9 +114,10 @@ function printUsage() {
   process.stdout.write(`Usage: node scripts/verify.mjs [options]
 
 Builds the CLI bundle, captures a fresh browser Oracle for each fixture, renders
-the same fixture through the CLI, and compares the outputs byte for byte. Exits
-non-zero on any difference. There is no tolerance, allow-list, or known-gaps
-mechanism.
+the same fixture through the CLI, and compares the outputs byte for byte. Both
+the WeChat-ready HTML and the body fragment (the web app's #output innerHTML,
+i.e. the Cose 头条 post.content) are compared. Exits non-zero on any
+difference. There is no tolerance, allow-list, or known-gaps mechanism.
 
 Fixtures (both run by default):
 ${
@@ -214,8 +215,10 @@ function buildEverything() {
     run(`pnpm`, args, { describe: `build failed: pnpm ${args.join(` `)}` })
 }
 
-function renderThroughCli(fixturePath, outPath, configPath) {
+function renderThroughCli(fixturePath, outPath, configPath, rawBody = false) {
   const args = [CLI_BUNDLE, `render`, fixturePath, `-o`, outPath]
+  if (rawBody)
+    args.push(`--raw-body`)
   if (configPath)
     args.push(`--config`, configPath)
   run(process.execPath, args, {
@@ -228,6 +231,58 @@ function formatLocations(locations) {
   const shown = locations.slice(0, 10).map(line => String(line))
   const suffix = locations.length > shown.length ? `, +${locations.length - shown.length} more` : ``
   return `${shown.join(`, `)}${suffix}`
+}
+
+/**
+ * Hashtag semantic assertion: the byte comparison could stay green while the
+ * engine "drifts" a hashtag into a heading on BOTH sides at once (Web and CLI
+ * share the same renderer), so byte parity alone cannot catch a semantic
+ * regression. This asserts the two hashtag forms from `full.md` render as
+ * paragraph text with a literal `#` — never as a heading — regardless of which
+ * side produced the body.
+ *
+ * Returns an array of problems (empty when the body is semantically correct).
+ */
+function assertHashtagSemantics(bodyHtml) {
+  const problems = []
+  // Form A (`#hashtag1 #hashtag2`) and form B (`#hashtag1# #hashtag2#`) must
+  // live inside a paragraph (`<p>`), never inside a heading. The whole body is
+  // typically a single line, so search for the enclosing element rather than
+  // line-by-line. This asserts semantics only for markers that are present:
+  // a fixture with no hashtags (e.g. `minimal`) simply has nothing to check,
+  // and marker presence/loss is owned by the byte comparison.
+  const enclosingTag = (needle) => {
+    const index = bodyHtml.indexOf(needle)
+    if (index < 0)
+      return null
+    // Walk backward to the most recent block-level open tag, and check whether
+    // the needle sits inside an <h1> (a heading) rather than a paragraph.
+    const preceding = bodyHtml.slice(0, index)
+    const lastBlockOpen = Math.max(
+      preceding.lastIndexOf(`<h1`),
+      preceding.lastIndexOf(`<p `),
+      preceding.lastIndexOf(`<p>`),
+      preceding.lastIndexOf(`<section`),
+    )
+    if (lastBlockOpen < 0)
+      return `unwrapped`
+    return bodyHtml.slice(lastBlockOpen, lastBlockOpen + 3)
+  }
+
+  for (const needle of [`#hashtag1`, `#hashtag1#`]) {
+    const tag = enclosingTag(needle)
+    if (tag === null)
+      continue // marker absent — nothing to assert
+    if (tag === `unwrapped`)
+      problems.push(`hashtag "${needle}" is not wrapped in any block element`)
+    else if (tag === `<h1`)
+      problems.push(`hashtag "${needle}" was promoted to an <h1> heading`)
+  }
+
+  // The closing `#` of form B must survive; a lost one breaks the literal text.
+  if (bodyHtml.includes(`#hashtag1 `) && !bodyHtml.includes(`#hashtag1#`))
+    problems.push(`hashtag form B lost its closing "#"`)
+  return problems
 }
 
 function printStructuralFailure(fixture, problems) {
@@ -266,8 +321,36 @@ function printPass(fixture, html) {
     process.stdout.write(`[verify] note: a green infrastructure probe proves nothing about product fidelity\n`)
 }
 
+function printBodyFailure(fixture, oracleBody, cliBody, comparison) {
+  process.stderr.write(
+    `[verify] BODY FAIL ${fixture.name} (${fixture.role}): body fragments are not byte-identical `
+    + `(oracle ${Buffer.byteLength(oracleBody, `utf8`)} bytes, CLI ${Buffer.byteLength(cliBody, `utf8`)} bytes, `
+    + `first difference at byte ${comparison.firstDifference})\n`,
+  )
+  process.stderr.write(`[verify] ${fixture.failureMeaning}\n`)
+  process.stderr.write(`[verify] difference classes (${comparison.hunkCount} hunks total):\n`)
+  for (const entry of comparison.classes) {
+    process.stderr.write(
+      `  ${entry.name.padEnd(24)} ${String(entry.locations.length).padStart(4)} hunks   lines ${formatLocations(entry.locations)}\n`,
+    )
+  }
+  process.stderr.write(`[verify] complete unified diff:\n`)
+  process.stderr.write(`${comparison.unifiedDiff}\n`)
+  process.stderr.write(
+    `[verify] total: ${comparison.hunkCount} hunks across ${comparison.classes.length} class(es)\n`,
+  )
+}
+
+function printBodyPass(fixture, bodyHtml) {
+  process.stdout.write(
+    `[verify] BODY PASS ${fixture.name} (${fixture.role}): body fragments are byte-identical (${Buffer.byteLength(bodyHtml, `utf8`)} bytes)\n`,
+  )
+}
+
 function isPassing(result) {
   return result.comparison.equal
+    && result.bodyComparison.equal
+    && result.hashtagProblems.length === 0
     && result.structuralProblems.length === 0
     && !result.configLeak
 }
@@ -278,11 +361,15 @@ function printSummary(results) {
     `[verify] summary: ${results.length} check(s) — ${passed} passed, ${results.length - passed} failed\n`,
   )
   for (const result of results) {
-    const { fixture, comparison, structuralProblems, configLeak } = result
+    const { fixture, comparison, bodyComparison, hashtagProblems, structuralProblems, configLeak } = result
     const verdict = isPassing(result) ? `PASS` : `FAIL`
     const details = []
     if (!comparison.equal)
       details.push(`${comparison.hunkCount} hunks: ${fixture.failureMeaning}`)
+    if (!bodyComparison.equal)
+      details.push(`body ${bodyComparison.hunkCount} hunks (Cose 头条 body drift)`)
+    if (hashtagProblems.length > 0)
+      details.push(`${hashtagProblems.length} hashtag semantic problem(s)`)
     if (structuralProblems.length > 0)
       details.push(`${structuralProblems.length} structural problem(s)`)
     if (configLeak)
@@ -298,12 +385,16 @@ async function verifyFixture({ fixture, workDir, configPath, projectedConfig, ca
   process.stdout.write(`[verify] fixture: ${fixture.name} — ${fixture.role}\n`)
 
   // Render through the CLI first: a config or fixture the CLI rejects fails in
-  // under a second instead of after the browser capture.
+  // under a second instead of after the browser capture. Render both the
+  // WeChat-ready output and the body fragment (Cose 头条 post.content).
   const cliOutPath = join(artifactDir, `cli.html`)
   renderThroughCli(fixture.path, cliOutPath, configPath)
   const cliHtml = readFileSync(cliOutPath, `utf8`)
+  const cliBodyPath = join(artifactDir, `cli-body.html`)
+  renderThroughCli(fixture.path, cliBodyPath, configPath, true)
+  const cliBody = readFileSync(cliBodyPath, `utf8`)
 
-  const oracleHtml = await captureOracle({
+  const oracle = await captureOracle({
     fixturePath: fixture.path,
     outDir: artifactDir,
     ...(projectedConfig
@@ -313,9 +404,12 @@ async function verifyFixture({ fixture, workDir, configPath, projectedConfig, ca
         }
       : {}),
   })
+  const { wechatHtml: oracleHtml, bodyHtml: oracleBody } = oracle
 
   const structuralProblems = findStructuralProblems(cliHtml)
   const comparison = compareOutputs(oracleHtml, cliHtml)
+  const bodyComparison = compareOutputs(oracleBody, cliBody)
+  const hashtagProblems = assertHashtagSemantics(oracleBody)
   writeFileSync(join(artifactDir, `diff.txt`), comparison.unifiedDiff, `utf8`)
   writeFileSync(
     join(artifactDir, `report.txt`),
@@ -326,6 +420,7 @@ async function verifyFixture({ fixture, workDir, configPath, projectedConfig, ca
       }`,
     `utf8`,
   )
+  writeFileSync(join(artifactDir, `body-diff.txt`), bodyComparison.unifiedDiff, `utf8`)
 
   if (structuralProblems.length > 0)
     printStructuralFailure(fixture, structuralProblems)
@@ -335,12 +430,23 @@ async function verifyFixture({ fixture, workDir, configPath, projectedConfig, ca
   else
     printFailure(fixture, oracleHtml, cliHtml, comparison)
 
-  process.stdout.write(`[verify] oracle: ${join(artifactDir, `oracle.html`)}\n`)
-  process.stdout.write(`[verify] cli:    ${cliOutPath}\n`)
-  process.stdout.write(`[verify] diff:   ${join(artifactDir, `diff.txt`)}\n`)
-  process.stdout.write(`[verify] report: ${join(artifactDir, `report.txt`)}\n`)
+  if (bodyComparison.equal)
+    printBodyPass(fixture, oracleBody)
+  else
+    printBodyFailure(fixture, oracleBody, cliBody, bodyComparison)
 
-  return { fixture, comparison, structuralProblems }
+  for (const problem of hashtagProblems)
+    process.stderr.write(`[verify] HASHTAG ${fixture.name}: ${problem}\n`)
+
+  process.stdout.write(`[verify] oracle:     ${join(artifactDir, `oracle.html`)}\n`)
+  process.stdout.write(`[verify] cli:        ${cliOutPath}\n`)
+  process.stdout.write(`[verify] diff:       ${join(artifactDir, `diff.txt`)}\n`)
+  process.stdout.write(`[verify] report:     ${join(artifactDir, `report.txt`)}\n`)
+  process.stdout.write(`[verify] oracle body: ${join(artifactDir, `body.html`)}\n`)
+  process.stdout.write(`[verify] cli body:    ${cliBodyPath}\n`)
+  process.stdout.write(`[verify] body diff:   ${join(artifactDir, `body-diff.txt`)}\n`)
+
+  return { fixture, comparison, bodyComparison, hashtagProblems, structuralProblems }
 }
 
 /**
@@ -423,8 +529,16 @@ async function runSelfTestMode() {
       capture: true,
       describe: `CLI render failed; the self-test needs a known-good render`,
     })
+    const knownGoodBodyPath = join(workDir, `known-good-body.html`)
+    run(process.execPath, [CLI_BUNDLE, `render`, FIXTURES.full.path, `-o`, knownGoodBodyPath, `--raw-body`], {
+      capture: true,
+      describe: `CLI --raw-body render failed; the self-test needs a known-good body`,
+    })
 
-    const { baselineProblems, positiveControl, cases } = runSelfTest(readFileSync(knownGoodPath, `utf8`))
+    const { baselineProblems, positiveControl, cases, bodyCases } = runSelfTest(
+      readFileSync(knownGoodPath, `utf8`),
+      readFileSync(knownGoodBodyPath, `utf8`),
+    )
     if (!positiveControl) {
       process.stderr.write(
         `[self-test] FAIL: identical input did not compare equal; every reverse case would pass for the wrong reason\n`,
@@ -454,8 +568,18 @@ async function runSelfTestMode() {
         `[self-test] FAIL: ${testCase.name} was NOT rejected${missingKind}; the gate cannot be trusted\n`,
       )
     }
+    for (const testCase of bodyCases) {
+      if (testCase.rejected) {
+        process.stdout.write(`[self-test] PASS: ${testCase.name} -> body gate rejects it (${testCase.firstReason})\n`)
+        continue
+      }
+      ok = false
+      process.stderr.write(
+        `[self-test] FAIL: ${testCase.name} was NOT rejected; the body gate cannot be trusted\n`,
+      )
+    }
     process.stdout.write(
-      `[self-test] ${ok ? `PASS` : `FAIL`}: ${cases.length} reverse case(s), every mutant must be rejected\n`,
+      `[self-test] ${ok ? `PASS` : `FAIL`}: ${cases.length + bodyCases.length} reverse case(s), every mutant must be rejected\n`,
     )
     return ok ? 0 : 1
   }

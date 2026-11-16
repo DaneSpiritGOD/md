@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { codeBlockThemeMap, isKnownCodeBlockTheme } from '../src/assets'
 import { siteDefaultRenderConfig } from '../src/defaults'
-import { renderMarkdownToStyledHtml } from '../src/render'
+import { renderMarkdownToBodyHtml, renderMarkdownToStyledHtml } from '../src/render'
 
 const root = path.dirname(fileURLToPath(import.meta.url))
 const fixturePath = path.join(root, '../fixtures/full.md')
@@ -124,5 +124,45 @@ describe('renderMarkdownToStyledHtml', () => {
   it('contains no CDN or dynamic-import network calls in the body pipeline output', () => {
     expect(result.html).not.toMatch(/cdn-doocs\.oss/)
     expect(result.html).not.toMatch(/import\s*\(\s*['"]https?/)
+  })
+})
+
+describe('renderMarkdownToBodyHtml', () => {
+  const result = renderMarkdownToBodyHtml(fixtureMarkdown)
+
+  it('starts with the container section, not a <style> block', () => {
+    expect(result.html.startsWith('<section class="container">')).toBe(true)
+  })
+
+  it('is exactly the styled render with the outer <style> prefix stripped', () => {
+    const styled = renderMarkdownToStyledHtml(fixtureMarkdown)
+    const styleEnd = styled.html.indexOf('</style>')
+    const expected = styled.html.slice(styleEnd + '</style>'.length).replace(/^\n/, '')
+    expect(result.html).toBe(expected)
+  })
+
+  it('keeps the postProcessHtml inline <style> blocks (mac-sign / h2 strong)', () => {
+    // These two small style blocks are part of the body on both the CLI and the
+    // web app, so they must survive the outer-style strip.
+    expect(result.html).toMatch(/\.hljs\.code__pre\s*>\s*\.mac-sign\s*\{/)
+    expect(result.html).toMatch(/h2\s+strong\s*\{[^}]*color:\s*inherit\s*!important/)
+  })
+
+  it('carries the same reading time as the styled render', () => {
+    const styled = renderMarkdownToStyledHtml(fixtureMarkdown)
+    expect(result.readingTime).toEqual(styled.readingTime)
+  })
+
+  it('keeps class attributes and highlight spans (Cose re-renders by schema)', () => {
+    expect(result.html).toMatch(/\sclass\s*=/)
+    expect(result.html).toContain('hljs')
+  })
+
+  it('renders hashtags as paragraph text, not headings', () => {
+    // Form A: `#hashtag1 #hashtag2` with no space after `#` is not a heading.
+    expect(result.html).toMatch(/<p[^>]*>.*#hashtag1 #hashtag2.*<\/p>/)
+    // Form B: the closing `#` is preserved, still paragraph text.
+    expect(result.html).toMatch(/<p[^>]*>.*#hashtag1# #hashtag2#.*<\/p>/)
+    expect(result.html).not.toMatch(/<h1[^>]*>\s*#hashtag/)
   })
 })

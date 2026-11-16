@@ -8,7 +8,14 @@ pnpm wcli:verify
 
 It builds both workspaces itself, captures a fresh Oracle from a real browser,
 renders the same fixture through the CLI, and compares the two outputs **byte
-for byte with zero tolerance**. Exit code 0 only on exact equality.
+for byte with zero tolerance**. Exit code 0 only on exact equality. Two
+artifacts are compared for every fixture:
+
+- the **WeChat-ready HTML** (the browser's clipboard `text/html` vs the CLI's
+  default render), and
+- the **body fragment** (the browser's `#output` innerHTML — the web app's
+  `post.content` that feeds the Cose 头条 editor — vs the CLI's `--raw-body`
+  render).
 
 There is no tolerance, no allow-list, no known-gaps list, and no expiry
 mechanism — by design. See [ADR-0003](../adr/0003-single-verify-gate.md)
@@ -50,11 +57,28 @@ difference cannot masquerade as an implementation difference.
 
 | Fixture               | Meaning                                                                                                                               |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `fixtures/full.md`    | Product signal: headings, tables, code blocks, lists, blockquotes, images, links, rules                                               |
+| `fixtures/full.md`    | Product signal: headings, tables, code blocks, lists, blockquotes, images, links, rules, hashtags                                     |
 | `fixtures/minimal.md` | Infrastructure probe: heading, paragraph, inline code. A failure means the harness is broken; a success proves nothing about fidelity |
 
 Both run by default so one command produces both signals. See
 [fixtures/README.md](../../packages/md-web-cli/fixtures/README.md).
+
+## Body gate and hashtag semantics
+
+The body comparison is byte-exact, and additionally asserts hashtag semantics:
+`full.md` carries both hashtag forms — `#hashtag1 #hashtag2` (hash then chars,
+no space) and `#hashtag1# #hashtag2#` (closing hash) — and the gate requires
+both to render as **paragraph** text with the literal `#` preserved, never as a
+heading, and the closing `#` of form B to survive. This is a second judgement
+axis on top of byte equality: because the Web and the CLI share the same
+renderer, a regression that turns a hashtag into a heading on **both** sides
+could keep the bytes identical, so byte parity alone cannot catch it.
+
+The Web capture pins the renderer parameters that the CLI's `--raw-body` uses by
+default — especially `countStatus` (the reading-time text varies by locale) and
+`themeMode` (`light`) — so the body fragments stay byte-identical. Changing any
+render option that reaches the body fragment (for example `isShowLineNumber` or
+`countStatus`) is caught by the byte comparison and fails the body case.
 
 ## Config case
 
@@ -83,9 +107,12 @@ and it cannot drift from that configuration.
 [verify] complete unified diff:
 ...
 [verify] total: 6 hunks across 8 class(es)
-[verify] oracle: /tmp/md-verify-XXXX/full/oracle.html
-[verify] cli:    /tmp/md-verify-XXXX/full/cli.html
-[verify] diff:   /tmp/md-verify-XXXX/full/diff.txt
+[verify] oracle:     /tmp/md-verify-XXXX/full/oracle.html
+[verify] cli:        /tmp/md-verify-XXXX/full/cli.html
+[verify] diff:       /tmp/md-verify-XXXX/full/diff.txt
+[verify] oracle body: /tmp/md-verify-XXXX/full/body.html
+[verify] cli body:    /tmp/md-verify-XXXX/full/cli-body.html
+[verify] body diff:   /tmp/md-verify-XXXX/full/body-diff.txt
 ```
 
 Classes are derived mechanically from what differs — `attribute:<name>`,
@@ -120,12 +147,13 @@ assertion. See [blind-spots.md](./blind-spots.md).
 pnpm wcli:verify --self-test
 ```
 
-Corrupts a known-good CLI render seven distinct ways — injected diagram,
+Corrupts a known-good CLI render nine distinct ways — injected diagram,
 formula, and language placeholders, stripped inline styles, an injected class
 attribute (rejected by the byte comparison, since classes are now legitimately
-present), an injected style block, and truncation — and asserts each mutant is
-rejected. It launches no browser and builds only the CLI bundle, so it doubles
-as the fast suite's proof that the gate can fail.
+present), an injected style block, truncation, plus two body mutants (an
+injected style block and a changed byte in the body fragment) — and asserts
+each mutant is rejected. It launches no browser and builds only the CLI bundle,
+so it doubles as the fast suite's proof that the gate can fail.
 
 ## Freshness guarantees
 

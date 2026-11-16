@@ -82,7 +82,13 @@ describe(`reverse-case self-test`, () => {
     ]) {
       expect(output).toContain(`PASS: ${name} -> gate rejects it`)
     }
+    for (const name of [
+      `body injected style block`,
+      `body mutated byte`,
+    ]) {
+      expect(output).toContain(`PASS: ${name} -> body gate rejects it`)
+    }
     expect(output).toContain(`PASS: identical input compares equal`)
-    expect(output).toContain(`7 reverse case(s)`)
+    expect(output).toContain(`9 reverse case(s)`)
   }, 120_000)
 })

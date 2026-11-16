@@ -144,3 +144,26 @@ export function renderMarkdownToStyledHtml(markdown: string, config: RenderConfi
     },
   }
 }
+
+/**
+ * Render a Markdown document to its body fragment only — the `#output`
+ * innerHTML that the Cose 头条 post path feeds the Toutiao editor
+ * (`renderMarkdownToBodyHtml` -> `content.body`). It is `renderMarkdownToStyledHtml`
+ * with the outer themed `<style>` block stripped, matching the web app's
+ * `post.content` (the `#output` node's innerHTML).
+ *
+ * Only the outer `<style>` prefix that `renderMarkdownToStyledHtml` concatenates
+ * is removed. The two small `<style>` blocks that `postProcessHtml` emits itself
+ * (`.mac-sign` / `h2 strong`) are part of the body on both sides and are kept.
+ * No class / style / highlight cleanup happens here: the Toutiao editor
+ * re-renders by its own schema, so the body just needs byte parity with the web
+ * app's `post.content`.
+ */
+export function renderMarkdownToBodyHtml(markdown: string, config: RenderConfigInput = {}): RenderResult {
+  const styled = renderMarkdownToStyledHtml(markdown, config)
+  const styleEnd = styled.html.indexOf(`</style>`)
+  let body = styled.html.slice(styleEnd + `</style>`.length)
+  if (body.startsWith(`\n`))
+    body = body.slice(1)
+  return { html: body, readingTime: styled.readingTime }
+}
