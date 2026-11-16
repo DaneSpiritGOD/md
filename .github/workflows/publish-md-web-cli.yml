@@ -86,11 +86,23 @@ jobs:
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org
         run: node scripts/resolve-publish-version.mjs
 
-      - name: Apply publish version
+      # Only run npm version when the resolved version actually differs from the
+      # manifest's current version. The resolver returns the manifest version
+      # as-is for the first publish (registry has no version yet) and for a
+      # hand-edited MAJOR.MINOR bump; in both cases the manifest is already
+      # correct and `npm version "$VERSION"` would fail with "Version not
+      # changed" (issue #17). PATCH bumps always differ and run normally.
+      - name: Apply publish version (skip when manifest is already at target)
         working-directory: packages/md-web-cli
         env:
           PUBLISH_VERSION: ${{ steps.resolve-version.outputs.version }}
-        run: npm version "$PUBLISH_VERSION" --no-git-tag-version
+        run: |
+          current=$(node -p "require('./package.json').version")
+          if [ "$current" = "$PUBLISH_VERSION" ]; then
+            echo "Manifest is already at $PUBLISH_VERSION; skipping version application."
+          else
+            npm version "$PUBLISH_VERSION" --no-git-tag-version
+          fi
 
       - name: Publish to npm (OIDC trusted publishing)
         working-directory: packages/md-web-cli
