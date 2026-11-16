@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "description": "Browserless doocs/md rendering CLI — single-file, zero-dependency Node bundle",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "md-web-cli": "dist/cli.js"
   },
