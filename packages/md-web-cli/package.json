@@ -4,6 +4,10 @@
   "version": "0.1.0",
   "description": "Browserless doocs/md rendering CLI — single-file, zero-dependency Node bundle",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DaneSpiritGOD/md"
+  },
   "publishConfig": {
     "access": "public"
   },
